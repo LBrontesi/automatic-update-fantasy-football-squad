@@ -11,7 +11,8 @@ from selenium.webdriver.common.keys import Keys
 driver = webdriver.Chrome()
 
 #insert here the url of your league from fantacalcio
-driver.get("league url")
+league_url = "league url"
+driver.get(league_url)
 
 button1 =driver.find_element(By.XPATH,"/html/body/nav[2]/div/a[2]")
 
