@@ -1,0 +1,63 @@
+{
+  "starters": [],
+  "bench": [
+    {
+      "name": "",
+      "role": "",
+      "team": "",
+      "rating": 0.0,
+      "fvm": 0.0,
+      "status": "available",
+      "home": false
+    },
+    {
+      "name": "",
+      "role": "",
+      "team": "",
+      "rating": 0.0,
+      "fvm": 0.0,
+      "status": "available",
+      "home": false
+    },
+    {
+      "name": "",
+      "role": "",
+      "team": "",
+      "rating": 0.0,
+      "fvm": 0.0,
+      "status": "available",
+      "home": false
+    },
+    {
+      "name": "",
+      "role": "",
+      "team": "",
+      "rating": 0.0,
+      "fvm": 0.0,
+      "status": "available",
+      "home": false
+    },
+    {
+      "name": "",
+      "role": "",
+      "team": "",
+      "rating": 0.0,
+      "fvm": 0.0,
+      "status": "available",
+      "home": false
+    },
+    {
+      "name": "",
+      "role": "",
+      "team": "",
+      "rating": 0.0,
+      "fvm": 0.0,
+      "status": "available",
+      "home": false
+    }
+  ],
+  "formation": "4-3-3",
+  "scores": {
+    "": 0.0
+  }
+}

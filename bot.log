@@ -1,0 +1,66 @@
+2026-06-26 23:14:51  INFO      ====================================================
+2026-06-26 23:14:51  INFO        Fantacalcio bot starting  2026-06-26 23:14
+2026-06-26 23:14:51  INFO        dry_run=True  league=all
+2026-06-26 23:14:51  INFO      ====================================================
+2026-06-26 23:14:51  INFO      ── SCRAPE ──────────────────────────────────────────
+2026-06-26 23:14:55  INFO      Navigating to login page...
+2026-06-26 23:15:08  WARNING   Login nav button not found — may already be logged in.
+2026-06-26 23:15:08  INFO      Scraping rusticatorsapienza...
+2026-06-26 23:15:08  INFO      Opening formation page: https://leghe.fantacalcio.it/rusticatorsapienza/area-gioco/inserisci-formazione?id=362238
+2026-06-26 23:15:46  WARNING   No players found via card scraping — falling back to table scraping.
+2026-06-26 23:15:46  INFO      Scraped 10 players from https://leghe.fantacalcio.it/rusticatorsapienza/area-gioco/inserisci-formazione?id=362238
+2026-06-26 23:15:46  INFO      Fixture enrichment not yet implemented — home bonus will not be applied. See _enrich_with_fixtures() in scraper.py to add this.
+2026-06-26 23:15:46  INFO      Saved 10 players → rusticatorsapienza_players.json
+2026-06-26 23:15:46  INFO      Scraping ilprimoverofanta...
+2026-06-26 23:15:46  INFO      Opening formation page: https://leghe.fantacalcio.it/ilprimoverofanta/area-gioco/inserisci-formazione?id=416045
+2026-06-26 23:16:24  WARNING   No players found via card scraping — falling back to table scraping.
+2026-06-26 23:16:24  INFO      Scraped 6 players from https://leghe.fantacalcio.it/ilprimoverofanta/area-gioco/inserisci-formazione?id=416045
+2026-06-26 23:16:24  INFO      Fixture enrichment not yet implemented — home bonus will not be applied. See _enrich_with_fixtures() in scraper.py to add this.
+2026-06-26 23:16:24  INFO      Saved 6 players → ilprimoverofanta_players.json
+2026-06-26 23:16:24  INFO      ── OPTIMISE ────────────────────────────────────────
+2026-06-26 23:16:24  INFO      Optimising lineup for rusticatorsapienza (10 players)...
+2026-06-26 23:16:24  WARNING   Not enough available Ps: need 1, found 0. Check your squad for injuries / must-bench players.
+2026-06-26 23:16:24  WARNING   Not enough available Ds: need 4, found 0. Check your squad for injuries / must-bench players.
+2026-06-26 23:16:24  WARNING   Not enough available Cs: need 3, found 0. Check your squad for injuries / must-bench players.
+2026-06-26 23:16:24  WARNING   Not enough available As: need 3, found 0. Check your squad for injuries / must-bench players.
+2026-06-26 23:16:24  INFO      === Optimal lineup (4-3-3) ===
+2026-06-26 23:16:24  INFO        --- bench ---
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO      Lineup saved → rusticatorsapienza_lineup.json
+2026-06-26 23:16:24  INFO      Optimising lineup for ilprimoverofanta (6 players)...
+2026-06-26 23:16:24  WARNING   Not enough available Ps: need 1, found 0. Check your squad for injuries / must-bench players.
+2026-06-26 23:16:24  WARNING   Not enough available Ds: need 4, found 0. Check your squad for injuries / must-bench players.
+2026-06-26 23:16:24  WARNING   Not enough available Cs: need 3, found 0. Check your squad for injuries / must-bench players.
+2026-06-26 23:16:24  WARNING   Not enough available As: need 3, found 0. Check your squad for injuries / must-bench players.
+2026-06-26 23:16:24  INFO      === Optimal lineup (4-3-3) ===
+2026-06-26 23:16:24  INFO        --- bench ---
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO        BENCH    []                            score=0.00
+2026-06-26 23:16:24  INFO      Lineup saved → ilprimoverofanta_lineup.json
+2026-06-26 23:16:24  INFO      ── SUBMIT ──────────────────────────────────────────
+2026-06-26 23:16:29  INFO      Logging in...
+2026-06-26 23:16:41  WARNING   Login button not found — assuming already logged in.
+2026-06-26 23:16:41  INFO      Submitting lineup for [rusticatorsapienza] (dry_run=True)
+2026-06-26 23:17:19  INFO      No reset button found — proceeding without resetting.
+2026-06-26 23:17:19  INFO      Placed 0/0 starters.
+2026-06-26 23:17:19  INFO      [DRY-RUN] Would click save button: button[class*='save']
+2026-06-26 23:17:19  INFO      ✓ Lineup submitted successfully for rusticatorsapienza.
+2026-06-26 23:17:19  INFO      Submitting lineup for [ilprimoverofanta] (dry_run=True)
+2026-06-26 23:17:57  INFO      No reset button found — proceeding without resetting.
+2026-06-26 23:17:57  INFO      Placed 0/0 starters.
+2026-06-26 23:17:57  INFO      [DRY-RUN] Would click save button: button[class*='save']
+2026-06-26 23:17:57  INFO      ✓ Lineup submitted successfully for ilprimoverofanta.
+2026-06-26 23:17:57  INFO      ── RESULTS ─────────────────────────────────────────
+2026-06-26 23:17:57  INFO        ✓ OK  rusticatorsapienza
+2026-06-26 23:17:57  INFO        ✓ OK  ilprimoverofanta
+2026-06-26 23:17:57  INFO      Done in 185.6s
