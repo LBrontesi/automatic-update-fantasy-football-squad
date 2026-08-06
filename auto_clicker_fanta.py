@@ -1,15 +1,20 @@
+import argparse
 import logging
 import os
 import sys
 import time
 
 from dotenv import load_dotenv
-from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
+
+from player_data import (
+    confirm_formation,
+    create_driver,
+    fetch_league_data,
+    login_if_needed,
+    set_lineup,
+)
+from predictions import get_prediction_source
+from squad_picker import DEFAULT_FORMATION, PickedSquad, pick_squad
 
 load_dotenv()
 
@@ -18,31 +23,8 @@ DEFAULT_LEAGUE_URLS = [
     "https://leghe.fantacalcio.it/ilprimoverofanta/area-gioco/inserisci-formazione?id=416045",
 ]
 
-LOGIN_BUTTON_SELECTORS = [
-    (By.XPATH, "//a[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accedi')] | //button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accedi')]"),
-    (By.XPATH, "/html/body/nav[2]/div/a[2]"),
-]
-
-USERNAME_SELECTORS = [
-    (By.XPATH, "//input[@formcontrolname='email'] | //input[@type='email']"),
-    (By.XPATH, "//input[contains(@placeholder, 'mail')] | //input[contains(@placeholder, 'email')]"),
-    (By.XPATH, "/html/body/app-root/layout-auth/div[1]/div/view-login/nz-card/div[2]/form/nz-form-item[1]/nz-form-control/div/div/nz-input-group/input"),
-]
-
-PASSWORD_SELECTORS = [
-    (By.XPATH, "//input[@formcontrolname='password'] | //input[@type='password']"),
-    (By.XPATH, "/html/body/app-root/layout-auth/div[1]/div/view-login/nz-card/div[2]/form/nz-form-item[2]/nz-form-control/div/div/nz-input-group/input"),
-]
-
-CONFIRM_BUTTON_SELECTORS = [
-    (By.XPATH, "//*[@id='formation']//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'conferma') or contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'invia')]"),
-    (By.XPATH, "//*[@id='formation']/div[2]/div[5]/button[1]"),
-]
-
-SUCCESS_SELECTORS = [
-    (By.CSS_SELECTOR, ".nz-message-success, ant-message-success, .ant-message-success"),
-    (By.XPATH, "//*[contains(@class, 'success') and contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'conferm')]"),
-]
+RETRIES_PER_LEAGUE = 2
+RETRY_SLEEP_SECONDS = 5
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,11 +33,8 @@ logging.basicConfig(
 )
 log = logging.getLogger("fantasquad")
 
-WAIT_TIMEOUT = 30
-RETRIES_PER_LEAGUE = 2
 
-
-def get_config():
+def get_config() -> dict:
     email = os.environ.get("FANTA_EMAIL", "").strip()
     password = os.environ.get("FANTA_PASSWORD", "").strip()
     if not email or not password:
@@ -68,108 +47,111 @@ def get_config():
     else:
         league_urls = DEFAULT_LEAGUE_URLS
     headless = os.environ.get("HEADLESS", "true").strip().lower() not in ("0", "false", "no")
-    return email, password, league_urls, headless
+    weights = {}
+    for key in ("avg", "trend", "home", "opponent"):
+        raw = os.environ.get(f"WEIGHTS_{key.upper()}", "").strip()
+        if raw:
+            weights[key] = float(raw)
+    return {
+        "email": email,
+        "password": password,
+        "league_urls": league_urls,
+        "headless": headless,
+        "formation": os.environ.get("FORMATION", DEFAULT_FORMATION).strip(),
+        "source": os.environ.get("PREDICTION_SOURCE", "historical").strip(),
+        "weights": weights,
+    }
 
 
-def create_driver(headless):
-    options = webdriver.ChromeOptions()
-    if headless:
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-    return webdriver.Chrome(options=options)
+def print_recommendation(picked: PickedSquad, scores: dict[str, float]) -> None:
+    log.info("Recommended XI (%s):", picked.formation)
+    for player in picked.starters:
+        log.info("  %s %-22s score=%s", player.role, player.name, scores.get(player.name, 0.0))
+    log.info("Captain: %s (score=%s)", picked.captain.name, scores.get(picked.captain.name, 0.0))
+    log.info("Bench: %s", ", ".join(p.name for p in picked.bench))
 
 
-def find_element(driver, selectors, wait=True, timeout=WAIT_TIMEOUT):
-    last_error = None
-    for by, selector in selectors:
-        try:
-            if wait:
-                return WebDriverWait(driver, timeout).until(
-                    EC.presence_of_element_located((by, selector))
-                )
-            return driver.find_element(by, selector)
-        except (TimeoutException, NoSuchElementException) as e:
-            last_error = e
-    if last_error:
-        raise last_error
+def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> None:
+    league = fetch_league_data(driver, url, debug_dir=args.debug_dir)
+    source = get_prediction_source(cfg["source"], weights=cfg["weights"])
+    scores = source.predict(league)
+    picked = pick_squad(league.players, scores, cfg["formation"])
+    print_recommendation(picked, scores)
+
+    if args.dry_run:
+        log.info("Dry run - nothing was changed on the site")
+        return
+
+    if league.lineup_empty is False:
+        log.info("Lineup already set for this matchday - confirming only")
+        confirm_formation(driver)
+        return
+
+    log.info("Lineup empty - setting the recommended XI")
+    set_lineup(driver, picked)
+    confirm_formation(driver)
+    log.info("League %s updated", league.name)
 
 
-def is_logged_in(driver):
-    try:
-        find_element(driver, USERNAME_SELECTORS, wait=False)
-        return False
-    except NoSuchElementException:
-        return True
-
-
-def do_login(driver, email, password):
-    login_button = find_element(driver, LOGIN_BUTTON_SELECTORS)
-    driver.execute_script("arguments[0].scrollIntoView();", login_button)
-    driver.execute_script("arguments[0].click();", login_button)
-
-    username = find_element(driver, USERNAME_SELECTORS)
-    driver.execute_script("arguments[0].scrollIntoView();", username)
-    username.send_keys(email)
-
-    password_input = find_element(driver, PASSWORD_SELECTORS)
-    driver.execute_script("arguments[0].scrollIntoView();", password_input)
-    password_input.send_keys(password)
-    password_input.send_keys(Keys.RETURN)
-
-    WebDriverWait(driver, WAIT_TIMEOUT).until_not(
-        EC.presence_of_element_located(USERNAME_SELECTORS[0])
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Auto-select and confirm your Fantacalcio squads."
     )
-    log.info("Logged in")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Log in and read the league pages, compute and print the recommended XI, "
+        "but change nothing on the site.",
+    )
+    parser.add_argument(
+        "--visible",
+        action="store_true",
+        help="Show the browser window even if HEADLESS=true.",
+    )
+    parser.add_argument(
+        "--debug-dir",
+        default="debug",
+        help="Directory for HTML snapshots on extraction failures (default: debug).",
+    )
+    args = parser.parse_args()
 
+    cfg = get_config()
+    headless = not args.visible and cfg["headless"]
+    log.info(
+        "Running %s with %d league(s), headless=%s, formation=%s, source=%s",
+        "dry run" if args.dry_run else "live",
+        len(cfg["league_urls"]),
+        headless,
+        cfg["formation"],
+        cfg["source"],
+    )
 
-def confirm_formation(driver, url):
-    log.info("Opening %s", url)
-    driver.get(url)
-
-    if not is_logged_in(driver):
-        do_login(driver, *get_config()[:2])
-        log.info("Re-opening %s after login", url)
-        driver.get(url)
-
-    button = find_element(driver, CONFIRM_BUTTON_SELECTORS)
-    driver.execute_script("arguments[0].scrollIntoView();", button)
-    driver.execute_script("arguments[0].click();", button)
-    log.info("Confirm button clicked")
-
-    try:
-        find_element(driver, SUCCESS_SELECTORS, timeout=15)
-        log.info("Success confirmed (confirmation message shown)")
-    except TimeoutException:
-        log.warning("No success message detected, assuming the click went through")
-
-
-def main():
-    email, password, league_urls, headless = get_config()
-    log.info("Running with %d league(s), headless=%s", len(league_urls), headless)
-
-    driver = create_driver(headless)
+    driver = create_driver(headless=headless)
     failures = []
     try:
-        for url in league_urls:
+        for url in cfg["league_urls"]:
             for attempt in range(1, RETRIES_PER_LEAGUE + 1):
                 try:
-                    confirm_formation(driver, url)
+                    driver.get(url)
+                    login_if_needed(driver, cfg["email"], cfg["password"])
+                    handle_league(driver, cfg, url, args)
                     break
                 except Exception as e:
-                    log.error("Attempt %d/%d failed for %s: %s", attempt, RETRIES_PER_LEAGUE, url, e)
+                    log.error(
+                        "Attempt %d/%d failed for %s: %s",
+                        attempt, RETRIES_PER_LEAGUE, url, e,
+                    )
                     if attempt == RETRIES_PER_LEAGUE:
                         failures.append(url)
                     else:
-                        time.sleep(5)
+                        time.sleep(RETRY_SLEEP_SECONDS)
     finally:
         driver.quit()
 
     if failures:
         log.error("Failed leagues: %s", ", ".join(failures))
         sys.exit(1)
-    log.info("All leagues updated")
+    log.info("All leagues processed")
 
 
 if __name__ == "__main__":
