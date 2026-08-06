@@ -1,0 +1,30 @@
+name: Update fantasy squad
+
+on:
+  schedule:
+    # 06:00 UTC every 2 days (08:00 in Italy during summer time)
+    - cron: "0 6 */2 * *"
+  workflow_dispatch:
+
+jobs:
+  update-squad:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Update squad
+        run: python auto_clicker_fanta.py
+        env:
+          FANTA_EMAIL: ${{ secrets.FANTA_EMAIL }}
+          FANTA_PASSWORD: ${{ secrets.FANTA_PASSWORD }}
+          LEAGUE_URLS: ${{ secrets.LEAGUE_URLS }}
+          HEADLESS: "true"
