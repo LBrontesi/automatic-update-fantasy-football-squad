@@ -44,7 +44,7 @@ jobs:
       - name: Update squad
         run: python auto_clicker_fanta.py
         env:
-          FANTA_EMAIL: ${{ secrets.FANTA_EMAIL }}
-          FANTA_PASSWORD: ${{ secrets.FANTA_PASSWORD }}
-          LEAGUE_URLS: ${{ secrets.LEAGUE_URLS }}
+          FANTACALCIO_EMAIL: ${{ secrets.FANTACALCIO_EMAIL }}
+          FANTACALCIO_PASSWORD: ${{ secrets.FANTACALCIO_PASSWORD }}
+          LEAGUE_URL: ${{ secrets.LEAGUE_URL }}
           HEADLESS: "true"

@@ -84,12 +84,12 @@ The output of a dry run includes the recommended XI with per-player scores, the 
 1. Add the credentials as repository secrets (Settings → Secrets and variables → Actions), or from the CLI:
 
    ```bash
-   gh secret set FANTA_EMAIL
-   gh secret set FANTA_PASSWORD
-   gh secret set LEAGUE_URLS
+   gh secret set FANTACALCIO_EMAIL
+   gh secret set FANTACALCIO_PASSWORD
+   gh secret set LEAGUE_URL
    ```
 
-   `LEAGUE_URLS` is the same comma-separated list as in `.env`. If the secret is missing, the script falls back to the two default league URLs.
+   `LEAGUE_URL` is the same (comma-separated) formation URL list as in `.env`. If the secret is missing, the script falls back to the two default league URLs.
 
 2. Test the pipeline: **Actions** → **Update fantasy squad** → **Run workflow**.
 

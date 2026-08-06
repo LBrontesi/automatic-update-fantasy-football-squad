@@ -35,13 +35,13 @@ log = logging.getLogger("fantasquad")
 
 
 def get_config() -> dict:
-    email = os.environ.get("FANTA_EMAIL", "").strip()
-    password = os.environ.get("FANTA_PASSWORD", "").strip()
+    email = os.environ.get("FANTACALCIO_EMAIL", "").strip()
+    password = os.environ.get("FANTACALCIO_PASSWORD", "").strip()
     if not email or not password:
         raise SystemExit(
-            "FANTA_EMAIL and FANTA_PASSWORD must be set (in .env or as environment variables)."
+            "FANTACALCIO_EMAIL and FANTACALCIO_PASSWORD must be set (in .env or as environment variables)."
         )
-    league_urls = os.environ.get("LEAGUE_URLS", "").strip()
+    league_urls = os.environ.get("LEAGUE_URL", "").strip()
     if league_urls:
         league_urls = [u.strip() for u in league_urls.split(",") if u.strip()]
     else:
