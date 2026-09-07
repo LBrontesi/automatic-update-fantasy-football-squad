@@ -33,11 +33,29 @@ def test_parse_fixtures_extracts_dates_and_kickoff_times() -> None:
     ]
 
 
-def test_schedule_allows_run_before_first_game() -> None:
+def test_schedule_waits_until_scheduled_time() -> None:
     fixtures = parse_fixtures(CALENDAR_HTML)
     decision = evaluate_schedule(
         fixtures,
         now=datetime.fromisoformat("2026-09-07T17:00:00+02:00"),
+    )
+    assert decision.allowed is False
+
+
+def test_schedule_runs_one_hour_before_first_game() -> None:
+    fixtures = parse_fixtures(CALENDAR_HTML)
+    decision = evaluate_schedule(
+        fixtures,
+        now=datetime.fromisoformat("2026-09-07T17:30:00+02:00"),
+    )
+    assert decision.allowed is True
+
+
+def test_schedule_runs_at_six_pm_when_first_game_is_later() -> None:
+    fixtures = [Fixture(datetime.fromisoformat("2026-09-07T20:45:00+02:00"))]
+    decision = evaluate_schedule(
+        fixtures,
+        now=datetime.fromisoformat("2026-09-07T18:00:00+02:00"),
     )
     assert decision.allowed is True
 
@@ -55,6 +73,15 @@ def test_schedule_runs_when_there_are_no_games_today() -> None:
     fixture = Fixture(datetime.fromisoformat("2026-09-08T18:30:00+02:00"))
     decision = evaluate_schedule(
         [fixture],
-        now=datetime.fromisoformat("2026-09-07T19:00:00+02:00"),
+        now=datetime.fromisoformat("2026-09-07T18:00:00+02:00"),
     )
     assert decision.allowed is True
+
+
+def test_schedule_waits_at_six_pm_when_there_are_no_games() -> None:
+    fixture = Fixture(datetime.fromisoformat("2026-09-08T18:30:00+02:00"))
+    decision = evaluate_schedule(
+        [fixture],
+        now=datetime.fromisoformat("2026-09-07T17:45:00+02:00"),
+    )
+    assert decision.allowed is False
