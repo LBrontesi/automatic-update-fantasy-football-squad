@@ -79,6 +79,8 @@ def test_pick_squad_captain_is_top_scorer() -> None:
     scores = {p.name: compute_score(p, WEIGHTS) for p in players}
     picked = pick_squad(players, scores, DEFAULT_FORMATION)
     assert picked.captain.name == "A1"
+    assert picked.vice is not None
+    assert picked.vice.name == "D1"
     assert max(picked.starters, key=lambda p: scores[p.name]).name == picked.captain.name
 
 

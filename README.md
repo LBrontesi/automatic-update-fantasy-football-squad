@@ -15,6 +15,8 @@ Per league, every run:
 5. **If the lineup is empty** (the site resets it after each matchday) → set the recommended XI and confirm.
 6. **If the lineup is already set** → confirm only, leaving your manual picks untouched.
 
+Before opening the browser, the bot checks the official Serie A calendar. On a day with games it runs only before the first kickoff; after that it exits successfully without changing a squad. On days without games it runs normally. Set `SKIP_AFTER_FIRST_GAME=false` to bypass this guard for a manual test.
+
 The scoring is plugged behind a `BasePredictionSource` interface: `historical` (past league votes) is implemented, `external` (forward-looking previsioni voti from fantacalcio.it/Gazzetta APIs) is a documented stub for future work.
 
 ## Setup
@@ -96,11 +98,13 @@ The output of a dry run includes the recommended XI with per-player scores, the 
 ### Caveats
 
 - **UTC schedule**: 06:00 UTC is 08:00 in Italy in summer, 07:00 in winter. Adjust the `cron` if you want a fixed Italian time.
+- **Matchday guard**: the default schedule guard uses `https://www.fantacalcio.it/serie-a/calendario` and `Europe/Rome`; override `SCHEDULE_URL` or `SCHEDULE_TIMEZONE` if needed.
 - **Inactivity cutoff**: GitHub disables scheduled workflows after 60 days without a push. If the bot silently stops, push any change (or run it manually) to re-enable it.
 - Chrome is installed automatically on the runner by `selenium-manager` (bundled with Selenium ≥ 4.6). Headless mode is forced by the workflow.
 
 ## Current limitations
 
-- **Setting the lineup is not mapped yet.** The bot can read players, score them and pick the XI (tested), but the add/remove-player controls of the formation UI still need their selectors mapped. Until then, a live run with an empty lineup stops with a clear error instead of confirming a half-set squad. Run `python auto_clicker_fanta.py --dry-run` locally and share the `debug/` HTML snapshots to get the UI mapping implemented.
+- The live path uses the current Angular lineup UI: it selects the configured formation, double-clicks the recommended players into the first valid slots, assigns captain and vice-captain, and saves the formation. If Fantacalcio changes the UI again, the run fails safely and saves an HTML snapshot under `debug/`.
+- Legacy URLs in the form `.../area-gioco/inserisci-formazione?id=...` are converted automatically to the current `.../view/competition/<id>/lineup` route.
 - `home` advantage is only applied when the league pages expose the venue; `opponent` weakness only when standings/results are extractable.
 - Picks can be up to 24h stale; the future `external` prediction source will reduce this.

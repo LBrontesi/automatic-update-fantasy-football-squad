@@ -1,5 +1,8 @@
 name: Update fantasy squad
 
+permissions:
+  contents: read
+
 on:
   schedule:
     # Daily at 06:00 UTC (08:00 in Italy during summer time). Matchday
@@ -21,7 +24,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 
       - name: Run tests
         run: python -m pytest -q
@@ -39,7 +42,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 
       - name: Update squad
         run: python auto_clicker_fanta.py

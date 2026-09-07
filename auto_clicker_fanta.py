@@ -11,9 +11,15 @@ from player_data import (
     create_driver,
     fetch_league_data,
     login_if_needed,
+    normalize_league_url,
     set_lineup,
 )
 from predictions import get_prediction_source
+from schedule_guard import (
+    DEFAULT_SCHEDULE_URL,
+    DEFAULT_TIMEZONE,
+    check_schedule_guard,
+)
 from squad_picker import DEFAULT_FORMATION, PickedSquad, pick_squad
 
 load_dotenv()
@@ -34,6 +40,29 @@ logging.basicConfig(
 log = logging.getLogger("fantasquad")
 
 
+def env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in ("0", "false", "no", "off")
+
+
+def schedule_allows_run() -> bool:
+    if not env_bool("SKIP_AFTER_FIRST_GAME", True):
+        log.info("Schedule guard disabled by SKIP_AFTER_FIRST_GAME")
+        return True
+
+    decision = check_schedule_guard(
+        url=os.environ.get("SCHEDULE_URL", DEFAULT_SCHEDULE_URL).strip(),
+        timezone_name=os.environ.get("SCHEDULE_TIMEZONE", DEFAULT_TIMEZONE).strip(),
+    )
+    if not decision.allowed:
+        log.info("Skipping squad update: %s", decision.reason)
+        return False
+    log.info("Schedule guard passed: %s", decision.reason)
+    return True
+
+
 def get_config() -> dict:
     email = os.environ.get("FANTACALCIO_EMAIL", "").strip()
     password = os.environ.get("FANTACALCIO_PASSWORD", "").strip()
@@ -46,7 +75,7 @@ def get_config() -> dict:
         league_urls = [u.strip() for u in league_urls.split(",") if u.strip()]
     else:
         league_urls = DEFAULT_LEAGUE_URLS
-    headless = os.environ.get("HEADLESS", "true").strip().lower() not in ("0", "false", "no")
+    headless = env_bool("HEADLESS", True)
     weights = {}
     for key in ("avg", "trend", "home", "opponent"):
         raw = os.environ.get(f"WEIGHTS_{key.upper()}", "").strip()
@@ -60,6 +89,7 @@ def get_config() -> dict:
         "formation": os.environ.get("FORMATION", DEFAULT_FORMATION).strip(),
         "source": os.environ.get("PREDICTION_SOURCE", "historical").strip(),
         "weights": weights,
+        "skip_after_first_game": env_bool("SKIP_AFTER_FIRST_GAME", True),
     }
 
 
@@ -68,6 +98,8 @@ def print_recommendation(picked: PickedSquad, scores: dict[str, float]) -> None:
     for player in picked.starters:
         log.info("  %s %-22s score=%s", player.role, player.name, scores.get(player.name, 0.0))
     log.info("Captain: %s (score=%s)", picked.captain.name, scores.get(picked.captain.name, 0.0))
+    if picked.vice:
+        log.info("Vice-captain: %s (score=%s)", picked.vice.name, scores.get(picked.vice.name, 0.0))
     log.info("Bench: %s", ", ".join(p.name for p in picked.bench))
 
 
@@ -115,6 +147,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if not schedule_allows_run():
+        return
+
     cfg = get_config()
     headless = not args.visible and cfg["headless"]
     log.info(
@@ -130,6 +165,7 @@ def main() -> None:
     failures = []
     try:
         for url in cfg["league_urls"]:
+            url = normalize_league_url(url)
             for attempt in range(1, RETRIES_PER_LEAGUE + 1):
                 try:
                     driver.get(url)

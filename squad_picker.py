@@ -26,6 +26,7 @@ class PickedSquad:
     starters: list[Player]
     captain: Player
     bench: list[Player]
+    vice: Player | None = None
 
 
 def parse_formation(formation: str) -> dict[str, int]:
@@ -79,7 +80,17 @@ def pick_squad(
             )
         starters.extend(eligible[: counts[role]])
 
-    captain = max(starters, key=lambda p: scores.get(p.name, 0.0))
+    ranked_starters = sorted(
+        starters, key=lambda p: scores.get(p.name, 0.0), reverse=True
+    )
+    captain = ranked_starters[0]
+    vice = ranked_starters[1] if len(ranked_starters) > 1 else None
     starter_names = {p.name for p in starters}
     bench = [p for p in players if p.name not in starter_names]
-    return PickedSquad(formation=formation, starters=starters, captain=captain, bench=bench)
+    return PickedSquad(
+        formation=formation,
+        starters=starters,
+        captain=captain,
+        bench=bench,
+        vice=vice,
+    )
