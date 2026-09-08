@@ -81,7 +81,7 @@ The output of a dry run includes the recommended XI with per-player scores, the 
 
 ## Option B: Cloud cron with GitHub Actions
 
-`.github/workflows/update-squad.yml` checks the schedule every 15 minutes. It runs the tests and bot at 18:00 in Italy, or one hour before an earlier first game, plus manual runs from the **Actions** tab.
+`.github/workflows/update-squad.yml` tries the update every three hours. The schedule guard allows those attempts only before the day's first game; after kickoff it exits without opening the browser. Manual runs from the **Actions** tab use the same guard.
 
 1. Add the credentials as repository secrets (Settings → Secrets and variables → Actions), or from the CLI:
 
@@ -97,8 +97,8 @@ The output of a dry run includes the recommended XI with per-player scores, the 
 
 ### Caveats
 
-- **Schedule polling**: GitHub Actions uses a 15-minute UTC cron because it cannot express a dynamic local-time trigger. The Python guard uses `Europe/Rome` and runs at `18:00`, or one hour before an earlier first game.
-- **Matchday guard**: the default schedule guard uses `https://www.fantacalcio.it/serie-a/calendario`; override `SCHEDULE_URL`, `SCHEDULE_TIMEZONE`, or `SCHEDULE_RUN_TIME` if needed.
+- **Schedule polling**: GitHub Actions uses a three-hour UTC cron to provide several chances to run. GitHub may still delay scheduled workflows, but a missed check is less likely to miss the update window.
+- **Matchday guard**: the default schedule guard uses `https://www.fantacalcio.it/serie-a/calendario` and `Europe/Rome`; override `SCHEDULE_URL` or `SCHEDULE_TIMEZONE` if needed.
 - **Inactivity cutoff**: GitHub disables scheduled workflows after 60 days without a push. If the bot silently stops, push any change (or run it manually) to re-enable it.
 - Chrome is installed automatically on the runner by `selenium-manager` (bundled with Selenium ≥ 4.6). Headless mode is forced by the workflow.
 
