@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 from html.parser import HTMLParser
 import logging
 import re
@@ -13,8 +13,6 @@ from zoneinfo import ZoneInfo
 
 DEFAULT_SCHEDULE_URL = "https://www.fantacalcio.it/serie-a/calendario"
 DEFAULT_TIMEZONE = "Europe/Rome"
-DEFAULT_RUN_TIME = "18:00"
-RUN_WINDOW_MINUTES = 15
 
 log = logging.getLogger(__name__)
 
@@ -102,14 +100,6 @@ def _parse_fixture_datetime(
     return datetime.combine(parsed_date, kickoff_time, tzinfo=timezone)
 
 
-def parse_run_time(value: str = DEFAULT_RUN_TIME) -> time:
-    try:
-        hour, minute = (int(part) for part in value.strip().split(":", 1))
-        return time(hour, minute)
-    except (ValueError, TypeError) as exc:
-        raise ValueError(f"Invalid local run time: {value!r}; expected HH:MM") from exc
-
-
 def parse_fixtures(html: str, timezone_name: str = DEFAULT_TIMEZONE) -> list[Fixture]:
     """Parse fixture kickoff times from a Fantacalcio calendar response."""
 
@@ -143,12 +133,10 @@ def evaluate_schedule(
     fixtures: list[Fixture],
     now: datetime | None = None,
     timezone_name: str = DEFAULT_TIMEZONE,
-    run_time: str = DEFAULT_RUN_TIME,
 ) -> ScheduleDecision:
-    """Allow one scheduled run at 18:00 or one hour before an earlier game."""
+    """Allow scheduled runs until today's first kickoff."""
 
     timezone = ZoneInfo(timezone_name)
-    configured_run_time = parse_run_time(run_time)
     current = now or datetime.now(timezone)
     if current.tzinfo is None:
         current = current.replace(tzinfo=timezone)
@@ -162,30 +150,13 @@ def evaluate_schedule(
         if fixture.kickoff.astimezone(timezone).date() == today
     )
     if not today_kickoffs:
-        target = datetime.combine(today, configured_run_time, tzinfo=timezone)
-        if target <= current < target + timedelta(minutes=RUN_WINDOW_MINUTES):
-            return ScheduleDecision(True, f"scheduled run time reached: {target.isoformat()}")
-        return ScheduleDecision(False, f"waiting for scheduled run time {target.isoformat()}")
+        return ScheduleDecision(True, "no Serie A games today")
 
     first_kickoff = today_kickoffs[0]
-    regular_target = datetime.combine(today, configured_run_time, tzinfo=timezone)
-    target = min(regular_target, first_kickoff - timedelta(hours=1))
-    if current < target:
-        return ScheduleDecision(
-            False,
-            f"waiting for scheduled run time {target.isoformat()}",
-            first_kickoff,
-        )
-    if current < first_kickoff and current < target + timedelta(minutes=RUN_WINDOW_MINUTES):
-        return ScheduleDecision(
-            True,
-            f"scheduled run time reached; first Serie A game is at {first_kickoff.isoformat()}",
-            first_kickoff,
-        )
     if current < first_kickoff:
         return ScheduleDecision(
-            False,
-            f"scheduled run window passed; first Serie A game is at {first_kickoff.isoformat()}",
+            True,
+            f"before first Serie A game at {first_kickoff.isoformat()}",
             first_kickoff,
         )
     return ScheduleDecision(
@@ -198,19 +169,13 @@ def evaluate_schedule(
 def check_schedule_guard(
     url: str = DEFAULT_SCHEDULE_URL,
     timezone_name: str = DEFAULT_TIMEZONE,
-    run_time: str = DEFAULT_RUN_TIME,
     now: datetime | None = None,
 ) -> ScheduleDecision:
     """Fetch and evaluate the schedule; fail closed if it cannot be checked."""
 
     try:
         fixtures = fetch_fixtures(url, timezone_name)
-        return evaluate_schedule(
-            fixtures,
-            now=now,
-            timezone_name=timezone_name,
-            run_time=run_time,
-        )
+        return evaluate_schedule(fixtures, now=now, timezone_name=timezone_name)
     except Exception as exc:
         log.warning("Could not verify today's fixture schedule: %s", exc)
         return ScheduleDecision(False, "fixture schedule could not be verified")
@@ -220,13 +185,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Check whether the squad should run now.")
     parser.add_argument("--url", default=DEFAULT_SCHEDULE_URL)
     parser.add_argument("--timezone", default=DEFAULT_TIMEZONE)
-    parser.add_argument("--run-time", default=DEFAULT_RUN_TIME)
     args = parser.parse_args()
 
     decision = check_schedule_guard(
         url=args.url,
         timezone_name=args.timezone,
-        run_time=args.run_time,
     )
     print(("run: " if decision.allowed else "skip: ") + decision.reason)
     return 0 if decision.allowed else 1

@@ -16,7 +16,6 @@ from player_data import (
 )
 from predictions import get_prediction_source
 from schedule_guard import (
-    DEFAULT_RUN_TIME,
     DEFAULT_SCHEDULE_URL,
     DEFAULT_TIMEZONE,
     check_schedule_guard,
@@ -56,7 +55,6 @@ def schedule_allows_run() -> bool:
     decision = check_schedule_guard(
         url=os.environ.get("SCHEDULE_URL", DEFAULT_SCHEDULE_URL).strip(),
         timezone_name=os.environ.get("SCHEDULE_TIMEZONE", DEFAULT_TIMEZONE).strip(),
-        run_time=os.environ.get("SCHEDULE_RUN_TIME", DEFAULT_RUN_TIME).strip(),
     )
     if not decision.allowed:
         log.info("Skipping squad update: %s", decision.reason)

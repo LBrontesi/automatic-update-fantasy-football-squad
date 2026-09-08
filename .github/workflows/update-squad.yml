@@ -5,9 +5,9 @@ permissions:
 
 on:
   schedule:
-    # Check every 15 minutes. The schedule guard starts the real update at
-    # 18:00 Europe/Rome, or one hour before an earlier first game.
-    - cron: "*/15 * * * *"
+    # Try every three hours. The guard permits runs only before today's
+    # first game, which gives multiple chances without changing a live day.
+    - cron: "0 */3 * * *"
   workflow_dispatch:
 
 jobs:
@@ -24,10 +24,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Check scheduled run time
+      - name: Check matchday guard
         id: guard
         run: |
-          if python schedule_guard.py --run-time 18:00 --timezone Europe/Rome; then
+          if python schedule_guard.py --timezone Europe/Rome; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
