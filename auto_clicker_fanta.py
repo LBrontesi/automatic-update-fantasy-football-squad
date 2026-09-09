@@ -7,6 +7,7 @@ import time
 from dotenv import load_dotenv
 
 from player_data import (
+    clear_lineup,
     confirm_formation,
     create_driver,
     fetch_league_data,
@@ -90,6 +91,8 @@ def get_config() -> dict:
         "source": os.environ.get("PREDICTION_SOURCE", "historical").strip(),
         "weights": weights,
         "skip_after_first_game": env_bool("SKIP_AFTER_FIRST_GAME", True),
+        "replace_existing_lineup": env_bool("REPLACE_EXISTING_LINEUP", True),
+        "dry_run": env_bool("DRY_RUN", False),
     }
 
 
@@ -108,21 +111,26 @@ def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> None
 
     # A populated lineup page does not expose the complete roster. Confirm it
     # immediately and preserve the user's existing choices.
-    if league.lineup_empty is False:
+    if league.lineup_empty is False and not cfg["replace_existing_lineup"]:
         log.info("Lineup already set for this matchday - confirming only")
         confirm_formation(driver)
         return
+
+    if not league.players:
+        raise RuntimeError("No roster data available for a data-driven lineup")
 
     source = get_prediction_source(cfg["source"], weights=cfg["weights"])
     scores = source.predict(league)
     picked = pick_squad(league.players, scores, cfg["formation"])
     print_recommendation(picked, scores)
 
-    if args.dry_run:
+    if args.dry_run or cfg["dry_run"]:
         log.info("Dry run - nothing was changed on the site")
         return
 
-    log.info("Lineup empty - setting the recommended XI")
+    if league.lineup_empty is False:
+        clear_lineup(driver)
+    log.info("Setting the data-driven recommended XI")
     set_lineup(driver, picked)
     confirm_formation(driver)
     log.info("League %s updated", league.name)

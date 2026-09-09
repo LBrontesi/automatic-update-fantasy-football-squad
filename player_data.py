@@ -55,6 +55,16 @@ CONFIRM_BUTTON_SELECTORS = [
     (By.XPATH, "//*[@id='formation']/div[2]/div[5]/button[1]"),
 ]
 
+CLEAR_LINEUP_BUTTON_SELECTORS = [
+    (By.XPATH, "//footer//button[.//nz-icon[@aria-label='mi:delete'] or .//*[contains(@aria-label, 'delete')]]"),
+    (By.XPATH, "//button[contains(@title, 'Svuota') or contains(@title, 'Reset') or contains(@aria-label, 'delete')]") ,
+]
+
+PRIVACY_DISMISS_SELECTORS = [
+    (By.ID, "pt-close"),
+    (By.XPATH, "//button[contains(@aria-label, 'Continue without accepting') or contains(normalize-space(.), 'Continue without accepting') or contains(normalize-space(.), 'Continua senza accettare') ]"),
+]
+
 SUCCESS_SELECTORS = [
     (By.CSS_SELECTOR, ".nz-message-success, ant-message-success, .ant-message-success"),
     (By.XPATH, "//*[contains(@class, 'success') and contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'conferm')]"),
@@ -235,6 +245,18 @@ def confirm_formation(driver) -> None:
         log.warning("No success message detected, assuming the click went through")
 
 
+def dismiss_privacy_banner(driver) -> None:
+    """Dismiss the optional consent overlay that can block lineup controls."""
+    button = find_optional_element(driver, PRIVACY_DISMISS_SELECTORS)
+    if button is None or not _visible(button):
+        return
+    try:
+        driver.execute_script("arguments[0].click();", button)
+        log.info("Privacy banner dismissed")
+    except WebDriverException:
+        log.debug("Privacy banner was already gone")
+
+
 def _check_lineup_state_once(driver) -> bool | None:
     slots = driver.find_elements(By.CSS_SELECTOR, "ui-lineup-slot[data-lineup-slot]")
     starter_slots = [
@@ -328,6 +350,136 @@ def sniff_api_endpoints(driver) -> list[str]:
     return unique
 
 
+def _performance_messages(driver) -> list[dict]:
+    messages = []
+    try:
+        entries = driver.get_log("performance")
+    except Exception:
+        return messages
+    for entry in entries:
+        try:
+            outer = json.loads(entry.get("message", "{}"))
+            message = outer.get("message", {})
+            if message:
+                messages.append(message)
+        except (TypeError, json.JSONDecodeError):
+            continue
+    return messages
+
+
+def _capture_api_json(driver, url_fragment: str):
+    """Read a JSON response already captured by Chrome's network log."""
+    for message in _performance_messages(driver):
+        if message.get("method") != "Network.responseReceived":
+            continue
+        params = message.get("params", {})
+        response = params.get("response", {})
+        response_url = response.get("url", "")
+        if url_fragment not in response_url or response.get("status", 0) >= 400:
+            continue
+        try:
+            body = driver.execute_cdp_cmd(
+                "Network.getResponseBody",
+                {"requestId": params["requestId"]},
+            ).get("body", "")
+            return json.loads(body)
+        except (KeyError, json.JSONDecodeError, WebDriverException) as exc:
+            log.debug("Could not read API response %s: %s", url_fragment, exc)
+    return None
+
+
+def _walk_dicts(value):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_dicts(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_dicts(child)
+
+
+def _key_name(value) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
+
+def _value_text(value) -> str:
+    if isinstance(value, str):
+        return _text(value)
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, dict):
+        for key in ("code", "shortName", "name", "label", "description", "value", "text"):
+            if key in value:
+                result = _value_text(value[key])
+                if result:
+                    return result
+        return ""
+    if isinstance(value, list):
+        return " ".join(result for result in (_value_text(item) for item in value) if result)
+    return ""
+
+
+def _field_value(record: dict, names: set[str]):
+    for key, value in record.items():
+        if _key_name(key) in names:
+            return value
+    return None
+
+
+def _numeric_values(value) -> list[float]:
+    if isinstance(value, (int, float)):
+        return [float(value)]
+    if isinstance(value, list):
+        values = []
+        for item in value:
+            values.extend(_numeric_values(item))
+        return values
+    if isinstance(value, dict):
+        for key in ("votes", "ratings", "scores", "values", "history", "last5"):
+            if key in value:
+                return _numeric_values(value[key])
+        return []
+    if isinstance(value, str):
+        return _parse_votes(value)
+    return []
+
+
+def _parse_api_players(payload) -> list[Player]:
+    """Convert the league API's player records into the scoring model."""
+    name_keys = {
+        "name", "playername", "fullname", "displayname", "nome",
+        "nomegiocatore", "shortname",
+    }
+    role_keys = {
+        "role", "roles", "position", "positioncode", "rolecode",
+        "playerrole", "ruolo", "mantrarole",
+    }
+    vote_keys = {
+        "votes", "vote", "ratings", "rating", "scores", "score",
+        "lastvotes", "last5", "history", "voti", "fantavoto", "media",
+    }
+    players = []
+    seen = set()
+    for record in _walk_dicts(payload):
+        name = _value_text(_field_value(record, name_keys))
+        role_raw = _value_text(_field_value(record, role_keys))
+        role = _parse_role(role_raw) if role_raw else "?"
+        if not name or role == "?":
+            continue
+        key = (name.casefold(), role)
+        if key in seen:
+            continue
+        seen.add(key)
+        votes = []
+        for field, value in record.items():
+            if _key_name(field) in vote_keys:
+                votes.extend(_numeric_values(value))
+        players.append(Player(name=name, role=role, votes=votes[-5:]))
+    if players:
+        log.info("Parsed %d players from the league API", len(players))
+    return players
+
+
 def _parse_votes(raw: str) -> list[float]:
     votes = []
     for token in re.findall(r"[\d,]+(?:\.\d+)?", raw.replace(",", ".")):
@@ -382,8 +534,8 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
     url = normalize_league_url(url)
     log.info("Opening %s", url)
     driver.get(url)
+    dismiss_privacy_banner(driver)
     find_element(driver, FORMATION_CONTAINER_SELECTORS)
-    sniff_api_endpoints(driver)
 
     # The current lineup route renders the selected XI and bench, not the
     # complete roster. If a lineup already exists, the caller only needs to
@@ -397,27 +549,31 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
         )
     except TimeoutException:
         log.warning("Lineup slots did not render before the extraction timeout")
+    api_players = _parse_api_players(
+        _capture_api_json(driver, "/onboarding/v1/league/players")
+    )
     lineup_empty = check_lineup_state(driver)
-    if lineup_empty is False:
+    if lineup_empty is False and not api_players:
         return LeagueData(
             name=urlparse(url).path.split("/")[1],
             url=url,
             lineup_empty=False,
         )
 
-    players: list[Player] = []
+    players: list[Player] = api_players
     rows = None
-    for by, selector in PLAYER_ROW_SELECTORS:
-        try:
-            rows = WebDriverWait(driver, WAIT_TIMEOUT).until(
-                EC.presence_of_all_elements_located((by, selector))
-            )
-        except TimeoutException:
-            continue
-        if rows:
-            break
+    if not players:
+        for by, selector in PLAYER_ROW_SELECTORS:
+            try:
+                rows = WebDriverWait(driver, WAIT_TIMEOUT).until(
+                    EC.presence_of_all_elements_located((by, selector))
+                )
+            except TimeoutException:
+                continue
+            if rows:
+                break
 
-    if not rows:
+    if not players and not rows:
         log.error(
             "Formation DOM counts: view-lineup=%d ui-player-card=%d "
             "ui-lineup-slot=%d data-player-id=%d formation=%d",
@@ -434,18 +590,19 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
             "--dry-run and share the debug/ output to map the selectors."
         )
 
-    for row in rows:
-        name = _name_text(row)
-        if not name:
-            continue
-        vote_el = find_optional_element(row, VOTE_IN_ROW_SELECTORS)
-        players.append(
-            Player(
-                name=name,
-                role=_parse_role(_role_text(row)),
-                votes=_parse_votes(vote_el.text) if vote_el else [],
+    if not players:
+        for row in rows:
+            name = _name_text(row)
+            if not name:
+                continue
+            vote_el = find_optional_element(row, VOTE_IN_ROW_SELECTORS)
+            players.append(
+                Player(
+                    name=name,
+                    role=_parse_role(_role_text(row)),
+                    votes=_parse_votes(vote_el.text) if vote_el else [],
+                )
             )
-        )
 
     if not players:
         save_snapshot(driver, debug_dir, "extract_empty")
@@ -465,6 +622,22 @@ def _find_player_cards(driver):
     if not cards:
         cards = driver.find_elements(By.CSS_SELECTOR, "ui-player-card")
     return [card for card in cards if _visible(card)]
+
+
+def clear_lineup(driver) -> None:
+    button = find_element(driver, CLEAR_LINEUP_BUTTON_SELECTORS)
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
+    driver.execute_script("arguments[0].click();", button)
+    WebDriverWait(driver, WAIT_TIMEOUT).until(
+        lambda d: all(
+            not slot.find_elements(By.CSS_SELECTOR, ".player-name, ui-player-card")
+            for slot in d.find_elements(
+                By.CSS_SELECTOR, "ui-lineup-slot[data-lineup-slot]"
+            )
+            if not (slot.get_attribute("data-lineup-slot") or "").startswith("-1:")
+        )
+    )
+    log.info("Existing lineup cleared")
 
 
 def _card_name(card) -> str:
