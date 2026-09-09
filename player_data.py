@@ -388,6 +388,38 @@ def _capture_api_json(driver, url_fragment: str):
     return None
 
 
+def _fetch_api_json(driver, url: str):
+    """Fetch a same-session API response from the authenticated page context."""
+    script = """
+    const [url, done] = [arguments[0], arguments[arguments.length - 1]];
+    fetch(url, {credentials: 'include', headers: {Accept: 'application/json'}})
+      .then(async response => ({status: response.status, body: await response.text()}))
+      .then(done)
+      .catch(error => done({error: String(error)}));
+    """
+    try:
+        result = driver.execute_async_script(script, url)
+        if result.get("status", 500) >= 400 or result.get("error"):
+            return None
+        return json.loads(result.get("body", ""))
+    except (AttributeError, json.JSONDecodeError, WebDriverException) as exc:
+        log.debug("Could not fetch API response %s: %s", url, exc)
+        return None
+
+
+def _payload_shape(value, depth: int = 0):
+    if depth >= 2:
+        return type(value).__name__
+    if isinstance(value, dict):
+        return {
+            str(key): _payload_shape(child, depth + 1)
+            for key, child in list(value.items())[:30]
+        }
+    if isinstance(value, list):
+        return {"list_length": len(value), "first": _payload_shape(value[0], depth + 1) if value else None}
+    return type(value).__name__
+
+
 def _walk_dicts(value):
     if isinstance(value, dict):
         yield value
@@ -549,9 +581,14 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
         )
     except TimeoutException:
         log.warning("Lineup slots did not render before the extraction timeout")
-    api_players = _parse_api_players(
-        _capture_api_json(driver, "/onboarding/v1/league/players")
-    )
+    api_payload = _capture_api_json(driver, "/onboarding/v1/league/players")
+    if api_payload is None:
+        api_payload = _fetch_api_json(
+            driver, "https://apileague.fantacalcio.it/onboarding/v1/league/players"
+        )
+    if api_payload is not None:
+        log.info("League API payload shape: %s", json.dumps(_payload_shape(api_payload)))
+    api_players = _parse_api_players(api_payload)
     lineup_empty = check_lineup_state(driver)
     if lineup_empty is False and not api_players:
         return LeagueData(
