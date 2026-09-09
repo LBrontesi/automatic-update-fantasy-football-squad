@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
@@ -49,7 +50,7 @@ PASSWORD_SELECTORS = [
 ]
 
 CONFIRM_BUTTON_SELECTORS = [
-    (By.XPATH, "//view-lineup//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'salva formazione') or contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'save lineup') ]"),
+    (By.XPATH, "//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'salva formazione') or contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'save lineup') ]"),
     (By.XPATH, "//*[@id='formation']//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'conferma') or contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'invia')]"),
     (By.XPATH, "//*[@id='formation']/div[2]/div[5]/button[1]"),
 ]
@@ -234,7 +235,7 @@ def confirm_formation(driver) -> None:
         log.warning("No success message detected, assuming the click went through")
 
 
-def check_lineup_state(driver) -> bool | None:
+def _check_lineup_state_once(driver) -> bool | None:
     slots = driver.find_elements(By.CSS_SELECTOR, "ui-lineup-slot[data-lineup-slot]")
     starter_slots = [
         slot
@@ -271,13 +272,37 @@ def check_lineup_state(driver) -> bool | None:
     return None
 
 
+def check_lineup_state(driver) -> bool | None:
+    """Read lineup state, tolerating Angular replacing slot elements while loading."""
+    for attempt in range(3):
+        try:
+            return _check_lineup_state_once(driver)
+        except StaleElementReferenceException:
+            if attempt == 2:
+                raise
+            log.info("Lineup DOM changed while loading; retrying state detection")
+            time.sleep(0.5)
+    return None
+
+
 def save_snapshot(driver, debug_dir: str | None, label: str) -> str | None:
     if not debug_dir:
         return None
     directory = Path(debug_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{label}_{driver.current_url.split('/')[-1].split('?')[0] or 'page'}.html"
+    page_name = driver.current_url.split('/')[-1].split('?')[0] or 'page'
+    path = directory / f"{label}_{page_name}.html"
     path.write_text(driver.page_source, encoding="utf-8")
+    try:
+        driver.save_screenshot(str(directory / f"{label}_{page_name}.png"))
+    except WebDriverException:
+        log.warning("Could not save screenshot for %s", label)
+    (directory / f"{label}_{page_name}.txt").write_text(
+        "URL: " + driver.current_url + "\n"
+        "TITLE: " + driver.title + "\n\n"
+        + driver.find_element(By.TAG_NAME, "body").text,
+        encoding="utf-8",
+    )
     log.info("Saved page snapshot to %s", path)
     return str(path)
 
@@ -360,6 +385,26 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
     find_element(driver, FORMATION_CONTAINER_SELECTORS)
     sniff_api_endpoints(driver)
 
+    # The current lineup route renders the selected XI and bench, not the
+    # complete roster. If a lineup already exists, the caller only needs to
+    # confirm it; trying to extract player rows first incorrectly fails on
+    # this page because the available-player list is not rendered there.
+    try:
+        WebDriverWait(driver, WAIT_TIMEOUT).until(
+            lambda d: d.find_elements(
+                By.CSS_SELECTOR, "ui-lineup-slot[data-lineup-slot]"
+            )
+        )
+    except TimeoutException:
+        log.warning("Lineup slots did not render before the extraction timeout")
+    lineup_empty = check_lineup_state(driver)
+    if lineup_empty is False:
+        return LeagueData(
+            name=urlparse(url).path.split("/")[1],
+            url=url,
+            lineup_empty=False,
+        )
+
     players: list[Player] = []
     rows = None
     for by, selector in PLAYER_ROW_SELECTORS:
@@ -373,6 +418,15 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
             break
 
     if not rows:
+        log.error(
+            "Formation DOM counts: view-lineup=%d ui-player-card=%d "
+            "ui-lineup-slot=%d data-player-id=%d formation=%d",
+            len(driver.find_elements(By.CSS_SELECTOR, "view-lineup")),
+            len(driver.find_elements(By.CSS_SELECTOR, "ui-player-card")),
+            len(driver.find_elements(By.CSS_SELECTOR, "ui-lineup-slot")),
+            len(driver.find_elements(By.CSS_SELECTOR, "[data-player-id]")),
+            len(driver.find_elements(By.ID, "formation")),
+        )
         save_snapshot(driver, debug_dir, "extract_failed")
         raise ExtractionError(
             "Could not find player rows in the formation page. "
@@ -398,8 +452,12 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
         raise ExtractionError("No players parsed from the formation page.")
 
     log.info("Parsed %d players from the formation page", len(players))
-    return LeagueData(name=urlparse(url).path.split("/")[1], url=url, players=players,
-                      lineup_empty=check_lineup_state(driver))
+    return LeagueData(
+        name=urlparse(url).path.split("/")[1],
+        url=url,
+        players=players,
+        lineup_empty=lineup_empty,
+    )
 
 
 def _find_player_cards(driver):
