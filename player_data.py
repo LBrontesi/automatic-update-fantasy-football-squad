@@ -602,24 +602,19 @@ def _parse_api_players(payload) -> list[Player]:
             continue
         seen.add(key)
         votes = []
-        # The live endpoint exposes a season fantasy-grade average (fagrd)
-        # rather than the five individual matchday votes used by the local
-        # model. Prefer the endpoint's last-five fields when present and use
-        # the season average as a stable fallback so scores are never all 0.
-        last_five_keys = {"l5frfc", "l5fral", "l5frit", "l5rfc", "l5ral", "l5rit"}
-        for field, value in record.items():
-            if _key_name(field) in last_five_keys:
-                votes.extend(vote for vote in _numeric_values(value) if vote > 0)
+        # The live endpoint exposes normalized season averages (fagrd/faagr)
+        # rather than five individual matchday votes. Use those before the
+        # generic historical fields; its l5* trend fields are encoded values,
+        # not direct 0-10 ratings, and must not be scored as votes.
+        for field_name in ("fagrd", "faagr", "fagit", "agrd", "aagr", "agit"):
+            value = _field_value(record, {field_name})
+            votes.extend(vote for vote in _numeric_values(value) if vote > 0)
+            if votes:
+                break
         if not votes:
             for field, value in record.items():
                 if _key_name(field) in vote_keys:
                     votes.extend(vote for vote in _numeric_values(value) if vote > 0)
-        if not votes:
-            for field_name in ("faagr", "fagrd", "aagr", "agrd"):
-                value = _field_value(record, {field_name})
-                votes.extend(vote for vote in _numeric_values(value) if vote > 0)
-                if votes:
-                    break
         if not votes:
             # Before the first matchday the performance metrics are empty.
             # Use the platform's current quotation as a data-backed fallback,
