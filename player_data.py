@@ -276,8 +276,19 @@ def save_snapshot(driver, debug_dir: str | None, label: str) -> str | None:
         return None
     directory = Path(debug_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{label}_{driver.current_url.split('/')[-1].split('?')[0] or 'page'}.html"
+    page_name = driver.current_url.split('/')[-1].split('?')[0] or 'page'
+    path = directory / f"{label}_{page_name}.html"
     path.write_text(driver.page_source, encoding="utf-8")
+    try:
+        driver.save_screenshot(str(directory / f"{label}_{page_name}.png"))
+    except WebDriverException:
+        log.warning("Could not save screenshot for %s", label)
+    (directory / f"{label}_{page_name}.txt").write_text(
+        "URL: " + driver.current_url + "\n"
+        "TITLE: " + driver.title + "\n\n"
+        + driver.find_element(By.TAG_NAME, "body").text,
+        encoding="utf-8",
+    )
     log.info("Saved page snapshot to %s", path)
     return str(path)
 
@@ -373,6 +384,15 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
             break
 
     if not rows:
+        log.error(
+            "Formation DOM counts: view-lineup=%d ui-player-card=%d "
+            "ui-lineup-slot=%d data-player-id=%d formation=%d",
+            len(driver.find_elements(By.CSS_SELECTOR, "view-lineup")),
+            len(driver.find_elements(By.CSS_SELECTOR, "ui-player-card")),
+            len(driver.find_elements(By.CSS_SELECTOR, "ui-lineup-slot")),
+            len(driver.find_elements(By.CSS_SELECTOR, "[data-player-id]")),
+            len(driver.find_elements(By.ID, "formation")),
+        )
         save_snapshot(driver, debug_dir, "extract_failed")
         raise ExtractionError(
             "Could not find player rows in the formation page. "
