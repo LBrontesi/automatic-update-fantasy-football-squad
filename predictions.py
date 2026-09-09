@@ -27,7 +27,9 @@ class HistoricalSource(BasePredictionSource):
     """Scores players from their past league votes (last-5 average, trend, venue)."""
 
     def __init__(self, weights: dict[str, float] | None = None):
-        self.weights = dict(DEFAULT_WEIGHTS if weights is None else weights)
+        self.weights = dict(DEFAULT_WEIGHTS)
+        if weights:
+            self.weights.update(weights)
 
     def predict(self, league) -> dict[str, float]:
         return {p.name: compute_score(p, self.weights) for p in league.players}
