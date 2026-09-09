@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 from pathlib import Path
@@ -494,6 +495,28 @@ def _payload_shape(value, depth: int = 0):
     return type(value).__name__
 
 
+def _payload_metric_summary(payload) -> dict[str, dict[str, int | float | None]]:
+    """Summarize populated numeric player metrics without exposing values/names."""
+    fields = (
+        "quotd", "fvmfc", "fvmma", "agrd", "fagrd", "aagr", "faagr",
+        "agit", "fagit", "mspv", "l5rfc", "l5ral", "l5rit", "l5frfc",
+        "l5fral", "l5frit",
+    )
+    players = payload.get("players", []) if isinstance(payload, dict) else []
+    summary = {}
+    for field in fields:
+        values = []
+        for record in players if isinstance(players, list) else []:
+            value = _field_value(record, {field}) if isinstance(record, dict) else None
+            values.extend(number for number in _numeric_values(value) if math.isfinite(number))
+        positive = [number for number in values if number > 0]
+        summary[field] = {
+            "positive": len(positive),
+            "max": max(positive) if positive else None,
+        }
+    return summary
+
+
 def _walk_dicts(value):
     if isinstance(value, dict):
         yield value
@@ -749,6 +772,7 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
         )
     if api_payload is not None:
         log.info("League API payload shape: %s", json.dumps(_payload_shape(api_payload)))
+        log.info("League API metric summary: %s", json.dumps(_payload_metric_summary(api_payload)))
     api_players = _parse_api_players(api_payload)
     if api_players:
         my_team_payload = _fetch_api_json(
