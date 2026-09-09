@@ -589,6 +589,10 @@ def _parse_api_players(payload) -> list[Player]:
                 votes.extend(_numeric_values(value))
         if not votes:
             for field, value in record.items():
+                if _key_name(field) in vote_keys:
+                    votes.extend(_numeric_values(value))
+        if not votes:
+            for field, value in record.items():
                 if _key_name(field) in {"fagrd", "agrd"}:
                     votes.extend(_numeric_values(value))
         player_id = _field_value(record, {"id"})
