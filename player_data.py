@@ -482,7 +482,7 @@ def _fetch_api_json(driver, url: str, auth_headers: dict[str, str] | None = None
 
 
 def _payload_shape(value, depth: int = 0):
-    if depth >= 2:
+    if depth >= 4:
         return type(value).__name__
     if isinstance(value, dict):
         return {
