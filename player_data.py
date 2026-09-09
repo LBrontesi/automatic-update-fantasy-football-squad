@@ -373,9 +373,9 @@ def _performance_messages(driver) -> list[dict]:
     return messages
 
 
-def _capture_api_json(driver, url_fragment: str):
+def _capture_api_json(driver, url_fragment: str, messages: list[dict] | None = None):
     """Read a JSON response already captured by Chrome's network log."""
-    for message in _performance_messages(driver):
+    for message in messages or _performance_messages(driver):
         if message.get("method") != "Network.responseReceived":
             continue
         params = message.get("params", {})
@@ -394,10 +394,31 @@ def _capture_api_json(driver, url_fragment: str):
     return None
 
 
-def _fetch_api_json(driver, url: str):
+def _capture_api_headers(
+    driver, url_fragment: str, messages: list[dict] | None = None
+) -> dict[str, str]:
+    """Reuse auth headers from the Angular request, without logging values."""
+    result = {}
+    for message in messages or _performance_messages(driver):
+        if message.get("method") != "Network.requestWillBeSent":
+            continue
+        request = message.get("params", {}).get("request", {})
+        if url_fragment not in request.get("url", ""):
+            continue
+        for key, value in (request.get("headers") or {}).items():
+            if key.lower() in {"authorization", "app_key", "token"} and value:
+                result[key] = value
+        if result:
+            return result
+    return result
+
+
+def _fetch_api_json(driver, url: str, auth_headers: dict[str, str] | None = None):
     """Fetch a same-session API response from the authenticated page context."""
     script = """
-    const [url, appKey, done] = [arguments[0], arguments[1], arguments[arguments.length - 1]];
+    const [url, appKey, suppliedHeaders, done] = [
+      arguments[0], arguments[1], arguments[2], arguments[arguments.length - 1]
+    ];
     const findToken = (value, depth = 0, seen = new Set()) => {
       if (depth > 6 || value === null || value === undefined) return null;
       if (typeof value === 'string') {
@@ -423,8 +444,12 @@ def _fetch_api_json(driver, url: str):
         try { token = findToken(JSON.parse(raw)); } catch (_) { token = findToken(raw); }
       }
     }
-    const headers = {Accept: 'application/json', app_key: appKey};
-    if (token) headers.Authorization = `Bearer ${token}`;
+    const headers = Object.assign(
+      {Accept: 'application/json', app_key: appKey}, suppliedHeaders || {}
+    );
+    if (!headers.Authorization && !headers.authorization && token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
     fetch(url, {credentials: 'include', headers})
       .then(async response => ({
         status: response.status,
@@ -436,13 +461,15 @@ def _fetch_api_json(driver, url: str):
       .catch(error => done({error: String(error)}));
     """
     try:
-        result = driver.execute_async_script(script, url, FANTACALCIO_APP_KEY)
+        result = driver.execute_async_script(
+            script, url, FANTACALCIO_APP_KEY, auth_headers or {}
+        )
         log.info(
-            "League API fetch status=%s content_type=%s body_length=%s token=%s",
+            "League API fetch status=%s content_type=%s body_length=%s auth_header=%s",
             result.get("status", "unknown"),
             result.get("content_type", "unknown"),
             result.get("body_length", "unknown"),
-            "present" if result.get("status") and not result.get("error") else "unknown",
+            "present" if auth_headers or result.get("status") else "unknown",
         )
         if result.get("status", 500) >= 400 or result.get("error"):
             if result.get("error"):
@@ -628,10 +655,20 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
         )
     except TimeoutException:
         log.warning("Lineup slots did not render before the extraction timeout")
-    api_payload = _capture_api_json(driver, "/onboarding/v1/league/players")
+    api_messages = _performance_messages(driver)
+    api_headers = _capture_api_headers(
+        driver, "/onboarding/v1/league/players", api_messages
+    )
+    if api_headers:
+        log.info("Reusing league API auth headers: %s", sorted(api_headers))
+    api_payload = _capture_api_json(
+        driver, "/onboarding/v1/league/players", api_messages
+    )
     if api_payload is None:
         api_payload = _fetch_api_json(
-            driver, "https://apileague.fantacalcio.it/onboarding/v1/league/players"
+            driver,
+            "https://apileague.fantacalcio.it/onboarding/v1/league/players",
+            auth_headers=api_headers,
         )
     if api_payload is not None:
         log.info("League API payload shape: %s", json.dumps(_payload_shape(api_payload)))
