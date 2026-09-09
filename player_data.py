@@ -78,6 +78,22 @@ FORMATION_CONTAINER_SELECTORS = [
     (By.CSS_SELECTOR, "[class*='formation']"),
 ]
 
+ROSTER_OPEN_SELECTORS = [
+    (
+        By.XPATH,
+        "//button[.//span[normalize-space()='Rosa'] or normalize-space()='Rosa' "
+        "or .//span[normalize-space()='Roster'] or normalize-space()='Roster']",
+    ),
+]
+
+PLAYER_CARD_SELECTORS = [
+    "view-lineup ui-player-card",
+    "ui-player-card",
+    "ui-player-list-item",
+    "ui-player-row",
+    "[data-player-id]",
+]
+
 PLAYER_ROW_SELECTORS = [
     (By.CSS_SELECTOR, "view-lineup ui-player-card"),
     (By.CSS_SELECTOR, "view-lineup [data-player-id]"),
@@ -850,10 +866,36 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
 
 
 def _find_player_cards(driver):
-    cards = driver.find_elements(By.CSS_SELECTOR, "view-lineup ui-player-card")
-    if not cards:
-        cards = driver.find_elements(By.CSS_SELECTOR, "ui-player-card")
-    return [card for card in cards if _visible(card)]
+    cards = []
+    for selector in PLAYER_CARD_SELECTORS:
+        cards.extend(driver.find_elements(By.CSS_SELECTOR, selector))
+    unique = {getattr(card, "id", id(card)): card for card in cards}
+    return [card for card in unique.values() if _visible(card)]
+
+
+def _open_roster_picker(driver):
+    cards = _find_player_cards(driver)
+    if cards:
+        return cards
+    button = find_optional_element(driver, ROSTER_OPEN_SELECTORS)
+    if button is None or not _visible(button):
+        raise LineupUIError(
+            "Could not open the roster picker: no visible Rosa/Roster button found."
+        )
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
+    try:
+        driver.execute_script("arguments[0].click();", button)
+    except WebDriverException as exc:
+        raise LineupUIError("Could not open the roster picker") from exc
+    try:
+        WebDriverWait(driver, WAIT_TIMEOUT).until(
+            lambda d: bool(_find_player_cards(d))
+        )
+    except TimeoutException as exc:
+        raise LineupUIError(
+            "The roster picker opened without rendering selectable player cards."
+        ) from exc
+    return _find_player_cards(driver)
 
 
 def clear_lineup(driver) -> None:
@@ -883,7 +925,7 @@ def _card_name(card) -> str:
 
 def _find_player_card(driver, player_name: str):
     wanted = _text(player_name).casefold()
-    cards = _find_player_cards(driver)
+    cards = _open_roster_picker(driver)
     exact = [card for card in cards if _card_name(card).casefold() == wanted]
     if exact:
         return exact[0]
@@ -997,6 +1039,7 @@ def _select_captain(driver, player_name: str, slot: int) -> None:
 def set_lineup(driver, picked) -> None:
     """Apply a PickedSquad through the current Fantacalcio Angular UI."""
     _select_formation(driver, picked.formation)
+    _open_roster_picker(driver)
 
     WebDriverWait(driver, WAIT_TIMEOUT).until(
         lambda d: len(d.find_elements(By.CSS_SELECTOR, "ui-lineup-slot[data-lineup-slot]")) >= 11

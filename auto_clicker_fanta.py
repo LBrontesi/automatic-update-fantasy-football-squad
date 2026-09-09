@@ -13,6 +13,7 @@ from player_data import (
     fetch_league_data,
     login_if_needed,
     normalize_league_url,
+    _open_roster_picker,
     set_lineup,
 )
 from predictions import get_prediction_source
@@ -129,6 +130,9 @@ def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> None
         return
 
     if league.lineup_empty is False:
+        # Verify that the site can expose the owned-player picker before
+        # deleting the current lineup; a UI change must never leave it empty.
+        _open_roster_picker(driver)
         clear_lineup(driver)
     log.info("Setting the data-driven recommended XI")
     set_lineup(driver, picked)
