@@ -26,6 +26,7 @@ from predictions import LeagueData
 log = logging.getLogger("fantasquad")
 
 WAIT_TIMEOUT = 30
+FANTACALCIO_APP_KEY = "ICiELOObd5DF5uJEATi77CRvHiiRuMU0"
 
 LOGIN_BUTTON_SELECTORS = [
     (By.CSS_SELECTOR, "button[type='submit']"),
@@ -151,7 +152,12 @@ def create_driver(headless: bool = True) -> webdriver.Chrome:
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
     options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
-    return webdriver.Chrome(options=options)
+    driver = webdriver.Chrome(options=options)
+    try:
+        driver.execute_cdp_cmd("Network.enable", {})
+    except WebDriverException:
+        log.debug("Could not enable Chrome network inspection")
+    return driver
 
 
 def find_element(driver, selectors, wait: bool = True, timeout: int = WAIT_TIMEOUT):
@@ -391,15 +397,56 @@ def _capture_api_json(driver, url_fragment: str):
 def _fetch_api_json(driver, url: str):
     """Fetch a same-session API response from the authenticated page context."""
     script = """
-    const [url, done] = [arguments[0], arguments[arguments.length - 1]];
-    fetch(url, {credentials: 'include', headers: {Accept: 'application/json'}})
-      .then(async response => ({status: response.status, body: await response.text()}))
+    const [url, appKey, done] = [arguments[0], arguments[1], arguments[arguments.length - 1]];
+    const findToken = (value, depth = 0, seen = new Set()) => {
+      if (depth > 6 || value === null || value === undefined) return null;
+      if (typeof value === 'string') {
+        const trimmed = value.trim().replace(/^Bearer\\s+/i, '');
+        return trimmed.split('.').length === 3 ? trimmed : null;
+      }
+      if (typeof value !== 'object' || seen.has(value)) return null;
+      seen.add(value);
+      for (const [key, child] of Object.entries(value)) {
+        if (/^(token|accessToken|access_token|jwt)$/i.test(key) && typeof child === 'string' && child.trim()) {
+          return child.trim().replace(/^Bearer\\s+/i, '');
+        }
+        const nested = findToken(child, depth + 1, seen);
+        if (nested) return nested;
+      }
+      return null;
+    };
+    let token = null;
+    for (const storage of [window.localStorage, window.sessionStorage]) {
+      for (let index = 0; index < storage.length && !token; index += 1) {
+        const raw = storage.getItem(storage.key(index));
+        if (!raw) continue;
+        try { token = findToken(JSON.parse(raw)); } catch (_) { token = findToken(raw); }
+      }
+    }
+    const headers = {Accept: 'application/json', app_key: appKey};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    fetch(url, {credentials: 'include', headers})
+      .then(async response => ({
+        status: response.status,
+        content_type: response.headers.get('content-type') || '',
+        body_length: Number(response.headers.get('content-length') || 0),
+        body: await response.text(),
+      }))
       .then(done)
       .catch(error => done({error: String(error)}));
     """
     try:
-        result = driver.execute_async_script(script, url)
+        result = driver.execute_async_script(script, url, FANTACALCIO_APP_KEY)
+        log.info(
+            "League API fetch status=%s content_type=%s body_length=%s token=%s",
+            result.get("status", "unknown"),
+            result.get("content_type", "unknown"),
+            result.get("body_length", "unknown"),
+            "present" if result.get("status") and not result.get("error") else "unknown",
+        )
         if result.get("status", 500) >= 400 or result.get("error"):
+            if result.get("error"):
+                log.warning("League API fetch failed: browser request error")
             return None
         return json.loads(result.get("body", ""))
     except (AttributeError, json.JSONDecodeError, WebDriverException) as exc:
