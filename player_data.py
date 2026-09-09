@@ -597,6 +597,16 @@ def _parse_api_players(payload) -> list[Player]:
                 votes.extend(vote for vote in _numeric_values(value) if vote > 0)
                 if votes:
                     break
+        if not votes:
+            # Before the first matchday the performance metrics are empty.
+            # Use the platform's current quotation as a data-backed fallback,
+            # normalized to the same rough scale as a fantasy vote.
+            quotation = _field_value(record, {"quotd"})
+            quotation_values = [
+                value for value in _numeric_values(quotation) if value > 0
+            ]
+            if quotation_values:
+                votes = [quotation_values[0] / 10.0]
         player_id = _field_value(record, {"id"})
         try:
             player_id = int(player_id) if player_id is not None else None
