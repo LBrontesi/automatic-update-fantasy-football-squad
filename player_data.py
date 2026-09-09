@@ -558,7 +558,7 @@ def _parse_api_players(payload) -> list[Player]:
     }
     role_keys = {
         "role", "roles", "position", "positioncode", "rolecode",
-        "playerrole", "ruolo", "mantrarole",
+        "playerrole", "ruolo", "mantrarole", "fcrle",
     }
     vote_keys = {
         "votes", "vote", "ratings", "rating", "scores", "score",
@@ -568,6 +568,8 @@ def _parse_api_players(payload) -> list[Player]:
     seen = set()
     for record in _walk_dicts(payload):
         name = _value_text(_field_value(record, name_keys))
+        if name.endswith("*"):
+            continue
         role_raw = _value_text(_field_value(record, role_keys))
         role = _parse_role(role_raw) if role_raw else "?"
         if not name or role == "?":
@@ -577,13 +579,64 @@ def _parse_api_players(payload) -> list[Player]:
             continue
         seen.add(key)
         votes = []
+        # The live endpoint exposes a season fantasy-grade average (fagrd)
+        # rather than the five individual matchday votes used by the local
+        # model. Prefer the endpoint's last-five fields when present and use
+        # the season average as a stable fallback so scores are never all 0.
+        last_five_keys = {"l5frfc", "l5fral", "l5frit", "l5rfc", "l5ral", "l5rit"}
         for field, value in record.items():
-            if _key_name(field) in vote_keys:
+            if _key_name(field) in last_five_keys:
                 votes.extend(_numeric_values(value))
-        players.append(Player(name=name, role=role, votes=votes[-5:]))
+        if not votes:
+            for field, value in record.items():
+                if _key_name(field) in {"fagrd", "agrd"}:
+                    votes.extend(_numeric_values(value))
+        player_id = _field_value(record, {"id"})
+        try:
+            player_id = int(player_id) if player_id is not None else None
+        except (TypeError, ValueError):
+            player_id = None
+        players.append(
+            Player(
+                name=name,
+                role=role,
+                votes=votes[-5:],
+                external_id=player_id,
+            )
+        )
     if players:
         log.info("Parsed %d players from the league API", len(players))
     return players
+
+
+def _parse_my_roster_ids(payload) -> set[int]:
+    """Extract owned player IDs from the authenticated /league/teams/my API."""
+    player_ids: set[int] = set()
+    for record in _walk_dicts(payload):
+        calendar = _field_value(record, {"cal"})
+        if isinstance(calendar, str):
+            for value in calendar.split(";"):
+                try:
+                    if value.strip():
+                        player_ids.add(int(value))
+                except ValueError:
+                    continue
+        loans = _field_value(record, {"pl"})
+        for loan in _walk_dicts(loans):
+            loan_id = _field_value(loan, {"id"})
+            try:
+                if loan_id is not None:
+                    player_ids.add(int(loan_id))
+            except (TypeError, ValueError):
+                continue
+        for key, value in record.items():
+            if _key_name(key) not in {"playerid", "player_id"}:
+                continue
+            try:
+                player_ids.add(int(value))
+            except (TypeError, ValueError):
+                continue
+    return player_ids
 
 
 def _parse_votes(raw: str) -> list[float]:
@@ -598,6 +651,14 @@ def _parse_votes(raw: str) -> list[float]:
 
 def _parse_role(raw: str) -> str:
     normalized = raw.lower()
+    if normalized.strip() in {"1", "p", "por"}:
+        return "G"
+    if normalized.strip() == "2":
+        return "D"
+    if normalized.strip() == "3":
+        return "C"
+    if normalized.strip() == "4":
+        return "A"
     for alias, role in ROLE_ALIASES.items():
         if alias in normalized:
             return role
@@ -673,6 +734,21 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
     if api_payload is not None:
         log.info("League API payload shape: %s", json.dumps(_payload_shape(api_payload)))
     api_players = _parse_api_players(api_payload)
+    if api_players:
+        my_team_payload = _fetch_api_json(
+            driver,
+            "https://apileague.fantacalcio.it/onboarding/v1/league/teams/my",
+            auth_headers=api_headers,
+        )
+        roster_ids = _parse_my_roster_ids(my_team_payload)
+        if roster_ids:
+            api_players = [
+                player for player in api_players if player.external_id in roster_ids
+            ]
+            log.info("Filtered live player pool to %d owned players", len(api_players))
+        else:
+            log.warning("Could not determine the owned roster from the league API")
+            api_players = []
     lineup_empty = check_lineup_state(driver)
     if lineup_empty is False and not api_players:
         return LeagueData(

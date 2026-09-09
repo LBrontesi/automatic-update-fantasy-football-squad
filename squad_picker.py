@@ -18,6 +18,7 @@ class Player:
     votes: list[float] = field(default_factory=list)
     home: bool = False
     opponent_weakness: float = 0.0
+    external_id: int | None = None
 
 
 @dataclass

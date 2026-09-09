@@ -1,4 +1,9 @@
-from player_data import _parse_api_players, _parse_role, normalize_league_url
+from player_data import (
+    _parse_api_players,
+    _parse_my_roster_ids,
+    _parse_role,
+    normalize_league_url,
+)
 
 
 def test_normalize_legacy_formation_url() -> None:
@@ -37,3 +42,29 @@ def test_api_players_are_converted_to_scoring_players() -> None:
         ("Thuram", "A"),
     ]
     assert players[0].votes == [6.0, 6.5, 7.0]
+
+
+def test_live_api_roles_and_season_average_are_supported() -> None:
+    payload = {
+        "players": [
+            {"id": 10, "name": "Keeper", "fcrle": 1, "fagrd": 6.8},
+            {"id": 20, "name": "Defender", "fcrle": 2, "fagrd": 6.4},
+            {"id": 30, "name": "Midfielder", "fcrle": 3, "fagrd": 6.6},
+            {"id": 40, "name": "Forward", "fcrle": 4, "fagrd": 7.1},
+        ]
+    }
+    players = _parse_api_players(payload)
+    assert [(p.external_id, p.role, p.votes) for p in players] == [
+        (10, "G", [6.8]),
+        (20, "D", [6.4]),
+        (30, "C", [6.6]),
+        (40, "A", [7.1]),
+    ]
+
+
+def test_owned_roster_ids_are_extracted_from_team_api() -> None:
+    assert _parse_my_roster_ids({"cal": "10;20;", "pl": [{"id": 30}]}) == {
+        10,
+        20,
+        30,
+    }
