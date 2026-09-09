@@ -375,6 +375,14 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
     # complete roster. If a lineup already exists, the caller only needs to
     # confirm it; trying to extract player rows first incorrectly fails on
     # this page because the available-player list is not rendered there.
+    try:
+        WebDriverWait(driver, WAIT_TIMEOUT).until(
+            lambda d: d.find_elements(
+                By.CSS_SELECTOR, "ui-lineup-slot[data-lineup-slot]"
+            )
+        )
+    except TimeoutException:
+        log.warning("Lineup slots did not render before the extraction timeout")
     lineup_empty = check_lineup_state(driver)
     if lineup_empty is False:
         return LeagueData(
