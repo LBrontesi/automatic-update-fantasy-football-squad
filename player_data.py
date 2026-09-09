@@ -586,15 +586,17 @@ def _parse_api_players(payload) -> list[Player]:
         last_five_keys = {"l5frfc", "l5fral", "l5frit", "l5rfc", "l5ral", "l5rit"}
         for field, value in record.items():
             if _key_name(field) in last_five_keys:
-                votes.extend(_numeric_values(value))
+                votes.extend(vote for vote in _numeric_values(value) if vote > 0)
         if not votes:
             for field, value in record.items():
                 if _key_name(field) in vote_keys:
-                    votes.extend(_numeric_values(value))
+                    votes.extend(vote for vote in _numeric_values(value) if vote > 0)
         if not votes:
-            for field, value in record.items():
-                if _key_name(field) in {"fagrd", "agrd"}:
-                    votes.extend(_numeric_values(value))
+            for field_name in ("faagr", "fagrd", "aagr", "agrd"):
+                value = _field_value(record, {field_name})
+                votes.extend(vote for vote in _numeric_values(value) if vote > 0)
+                if votes:
+                    break
         player_id = _field_value(record, {"id"})
         try:
             player_id = int(player_id) if player_id is not None else None

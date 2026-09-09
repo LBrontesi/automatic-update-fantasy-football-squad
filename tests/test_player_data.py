@@ -62,6 +62,13 @@ def test_live_api_roles_and_season_average_are_supported() -> None:
     ]
 
 
+def test_zero_last_five_values_fall_back_to_average() -> None:
+    players = _parse_api_players(
+        {"players": [{"id": 10, "name": "Keeper", "fcrle": 1, "l5frfc": 0, "faagr": 6.9}]}
+    )
+    assert players[0].votes == [6.9]
+
+
 def test_owned_roster_ids_are_extracted_from_team_api() -> None:
     assert _parse_my_roster_ids({"cal": "10;20;", "pl": [{"id": 30}]}) == {
         10,
