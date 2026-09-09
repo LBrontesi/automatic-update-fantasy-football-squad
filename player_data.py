@@ -371,6 +371,18 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
     find_element(driver, FORMATION_CONTAINER_SELECTORS)
     sniff_api_endpoints(driver)
 
+    # The current lineup route renders the selected XI and bench, not the
+    # complete roster. If a lineup already exists, the caller only needs to
+    # confirm it; trying to extract player rows first incorrectly fails on
+    # this page because the available-player list is not rendered there.
+    lineup_empty = check_lineup_state(driver)
+    if lineup_empty is False:
+        return LeagueData(
+            name=urlparse(url).path.split("/")[1],
+            url=url,
+            lineup_empty=False,
+        )
+
     players: list[Player] = []
     rows = None
     for by, selector in PLAYER_ROW_SELECTORS:
@@ -418,8 +430,12 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
         raise ExtractionError("No players parsed from the formation page.")
 
     log.info("Parsed %d players from the formation page", len(players))
-    return LeagueData(name=urlparse(url).path.split("/")[1], url=url, players=players,
-                      lineup_empty=check_lineup_state(driver))
+    return LeagueData(
+        name=urlparse(url).path.split("/")[1],
+        url=url,
+        players=players,
+        lineup_empty=lineup_empty,
+    )
 
 
 def _find_player_cards(driver):

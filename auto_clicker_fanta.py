@@ -105,6 +105,14 @@ def print_recommendation(picked: PickedSquad, scores: dict[str, float]) -> None:
 
 def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> None:
     league = fetch_league_data(driver, url, debug_dir=args.debug_dir)
+
+    # A populated lineup page does not expose the complete roster. Confirm it
+    # immediately and preserve the user's existing choices.
+    if league.lineup_empty is False:
+        log.info("Lineup already set for this matchday - confirming only")
+        confirm_formation(driver)
+        return
+
     source = get_prediction_source(cfg["source"], weights=cfg["weights"])
     scores = source.predict(league)
     picked = pick_squad(league.players, scores, cfg["formation"])
@@ -112,11 +120,6 @@ def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> None
 
     if args.dry_run:
         log.info("Dry run - nothing was changed on the site")
-        return
-
-    if league.lineup_empty is False:
-        log.info("Lineup already set for this matchday - confirming only")
-        confirm_formation(driver)
         return
 
     log.info("Lineup empty - setting the recommended XI")
