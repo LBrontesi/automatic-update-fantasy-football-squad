@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
@@ -234,7 +235,7 @@ def confirm_formation(driver) -> None:
         log.warning("No success message detected, assuming the click went through")
 
 
-def check_lineup_state(driver) -> bool | None:
+def _check_lineup_state_once(driver) -> bool | None:
     slots = driver.find_elements(By.CSS_SELECTOR, "ui-lineup-slot[data-lineup-slot]")
     starter_slots = [
         slot
@@ -268,6 +269,19 @@ def check_lineup_state(driver) -> bool | None:
     except NoSuchElementException:
         pass
     log.warning("Could not detect lineup state from the page, assuming empty")
+    return None
+
+
+def check_lineup_state(driver) -> bool | None:
+    """Read lineup state, tolerating Angular replacing slot elements while loading."""
+    for attempt in range(3):
+        try:
+            return _check_lineup_state_once(driver)
+        except StaleElementReferenceException:
+            if attempt == 2:
+                raise
+            log.info("Lineup DOM changed while loading; retrying state detection")
+            time.sleep(0.5)
     return None
 
 
