@@ -978,28 +978,35 @@ def _select_formation(driver, formation: str) -> None:
     # The current Angular UI exposes the selector as ui-chip-selector. Clicking
     # it reveals ui-chip options; older pages may render the same options as
     # buttons or role=option elements.
-    for element in driver.find_elements(By.CSS_SELECTOR, "ui-chip-selector, ui-chip-list"):
+    for element in driver.find_elements(
+        By.CSS_SELECTOR, "ui-chip-selector > button, ui-chip-selector button, ui-chip-list"
+    ):
         if _visible(element):
             try:
-                element.click()
+                driver.execute_script("arguments[0].click();", element)
             except WebDriverException:
                 driver.execute_script("arguments[0].click();", element)
             break
 
-    candidates = driver.find_elements(
-        By.XPATH,
-        f"//*[normalize-space(.)='{label}' or normalize-space(.)='{compact}']",
-    )
-    for candidate in candidates:
-        if _visible(candidate) and candidate.tag_name.lower() in {
-            "button", "ui-chip", "ui-chip-option", "li", "span", "div"
-        }:
-            try:
-                candidate.click()
-            except WebDriverException:
-                driver.execute_script("arguments[0].click();", candidate)
-            log.info("Selected formation %s", label)
-            return
+    def find_option(d):
+        candidates = d.find_elements(
+            By.XPATH,
+            f"//*[normalize-space(.)='{label}' or normalize-space(.)='{compact}']",
+        )
+        return next((candidate for candidate in candidates if _visible(candidate)), None)
+
+    try:
+        candidate = WebDriverWait(driver, WAIT_TIMEOUT).until(find_option)
+        driver.execute_script(
+            "const item = arguments[0]; "
+            "const target = item.closest('button,[role=option],li,ui-chip') || item; "
+            "target.click();",
+            candidate,
+        )
+        log.info("Selected formation %s", label)
+        return
+    except TimeoutException:
+        pass
 
     # If the requested formation is already active, the selector may not have
     # rendered an option. Continue and let the role-aware placement validate it.

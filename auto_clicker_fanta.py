@@ -13,6 +13,7 @@ from player_data import (
     fetch_league_data,
     login_if_needed,
     normalize_league_url,
+    save_snapshot,
     _open_roster_picker,
     set_lineup,
 )
@@ -135,7 +136,11 @@ def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> None
         _open_roster_picker(driver)
         clear_lineup(driver)
     log.info("Setting the data-driven recommended XI")
-    set_lineup(driver, picked)
+    try:
+        set_lineup(driver, picked)
+    except Exception:
+        save_snapshot(driver, args.debug_dir, "set_lineup_failed")
+        raise
     confirm_formation(driver)
     log.info("League %s updated", league.name)
 
