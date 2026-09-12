@@ -81,6 +81,10 @@ FORMATION_CONTAINER_SELECTORS = [
 ROSTER_OPEN_SELECTORS = [
     (
         By.XPATH,
+        "//view-lineup//button[normalize-space(.)='Rosa' or normalize-space(.)='Roster']",
+    ),
+    (
+        By.XPATH,
         "//button[.//span[normalize-space()='Rosa'] or normalize-space()='Rosa' "
         "or .//span[normalize-space()='Roster'] or normalize-space()='Roster']",
     ),
@@ -873,7 +877,7 @@ def _find_player_cards(driver):
     return [card for card in unique.values() if _visible(card)]
 
 
-def _open_roster_picker(driver):
+def _open_roster_picker(driver, debug_dir: str | None = None):
     cards = _find_player_cards(driver)
     if cards:
         return cards
@@ -883,15 +887,46 @@ def _open_roster_picker(driver):
             "Could not open the roster picker: no visible Rosa/Roster button found."
         )
     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
-    try:
-        driver.execute_script("arguments[0].click();", button)
-    except WebDriverException as exc:
-        raise LineupUIError("Could not open the roster picker") from exc
+    log.info("Opening roster picker via button text=%r", _text(button.text))
+    def drawer_open(d):
+        for wrapper in d.find_elements(By.CSS_SELECTOR, ".ant-drawer-content-wrapper"):
+            if not _visible(wrapper):
+                continue
+            transform = (wrapper.value_of_css_property("transform") or "").replace(" ", "")
+            if transform and "-100%" not in transform:
+                return True
+        return False
+
+    # WebDriver click preserves the browser's real pointer/focus event
+    # sequence. Angular's drawer trigger is less reliable with a plain DOM
+    # .click() on headless Chrome, so keep DOM and pointer fallbacks.
+    click_methods = [
+        lambda: button.click(),
+        lambda: ActionChains(driver).move_to_element(button).click().perform(),
+        lambda: driver.execute_script("arguments[0].click();", button),
+    ]
+    opened = False
+    for click in click_methods:
+        try:
+            click()
+            WebDriverWait(driver, 5).until(drawer_open)
+            opened = True
+            break
+        except (TimeoutException, WebDriverException):
+            continue
+
+    if not opened:
+        save_snapshot(driver, debug_dir, "roster_picker_not_open")
+        raise LineupUIError(
+            "Clicking the Rosa/Roster button did not open the roster drawer."
+        )
     try:
         WebDriverWait(driver, WAIT_TIMEOUT).until(
             lambda d: bool(_find_player_cards(d))
         )
     except TimeoutException as exc:
+        log.warning("Roster drawer opened but no known player-card selector matched")
+        save_snapshot(driver, debug_dir, "roster_picker_empty")
         raise LineupUIError(
             "The roster picker opened without rendering selectable player cards."
         ) from exc
@@ -1043,10 +1078,10 @@ def _select_captain(driver, player_name: str, slot: int) -> None:
     )
 
 
-def set_lineup(driver, picked) -> None:
+def set_lineup(driver, picked, debug_dir: str | None = None) -> None:
     """Apply a PickedSquad through the current Fantacalcio Angular UI."""
     _select_formation(driver, picked.formation)
-    _open_roster_picker(driver)
+    _open_roster_picker(driver, debug_dir=debug_dir)
 
     WebDriverWait(driver, WAIT_TIMEOUT).until(
         lambda d: len(d.find_elements(By.CSS_SELECTOR, "ui-lineup-slot[data-lineup-slot]")) >= 11
