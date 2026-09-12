@@ -9,6 +9,12 @@ on:
     # first game, which gives multiple chances without changing a live day.
     - cron: "0 */3 * * *"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Read the roster and print the recommendation without changing the lineup"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   schedule-guard:
@@ -75,6 +81,8 @@ jobs:
           FANTACALCIO_PASSWORD: ${{ secrets.FANTACALCIO_PASSWORD }}
           LEAGUE_URL: ${{ secrets.LEAGUE_URL }}
           HEADLESS: "true"
+          REPLACE_EXISTING_LINEUP: "true"
+          DRY_RUN: ${{ inputs.dry_run || false }}
 
       - name: Upload browser debug files
         if: always()

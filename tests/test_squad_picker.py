@@ -106,6 +106,14 @@ def test_historical_source_returns_scores_for_all_players() -> None:
     assert scores["A1"] > scores["D4"]
 
 
+def test_historical_source_empty_or_partial_weights_keep_defaults() -> None:
+    from predictions import LeagueData
+
+    league = LeagueData(name="test", url="http://example.com", players=make_squad_players())
+    assert HistoricalSource(weights={}).predict(league)["A1"] > 0
+    assert HistoricalSource(weights={"avg": 1.0}).predict(league)["A1"] > 0
+
+
 def test_pick_squad_not_enough_role_players() -> None:
     players = [Player("GK1", "G", [6.0]), Player("D1", "D", [6.0])]
     scores = {p.name: compute_score(p, WEIGHTS) for p in players}
