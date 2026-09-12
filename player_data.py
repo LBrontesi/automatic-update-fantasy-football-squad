@@ -135,6 +135,15 @@ LINEUP_EMPTY_SELECTORS = [
     (By.XPATH, "//*[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'formazione non confermata')]"),
 ]
 
+LINEUP_LOCKED_SELECTORS = [
+    (By.CSS_SELECTOR, "ui-lineup-deadline.is-live"),
+    (
+        By.XPATH,
+        "//*[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', "
+        "'abcdefghijklmnopqrstuvwxyz'), 'live in corso')]",
+    ),
+]
+
 ROLE_ALIASES = {
     "portiere": "G",
     "difensore": "D",
@@ -332,6 +341,16 @@ def check_lineup_state(driver) -> bool | None:
             log.info("Lineup DOM changed while loading; retrying state detection")
             time.sleep(0.5)
     return None
+
+
+def check_lineup_locked(driver) -> bool:
+    """Return whether the competition UI has locked lineup editing."""
+    for by, selector in LINEUP_LOCKED_SELECTORS:
+        for element in driver.find_elements(by, selector):
+            if _visible(element) or by == By.CSS_SELECTOR:
+                log.info("Lineup editing is locked: live matchday status shown")
+                return True
+    return False
 
 
 def save_snapshot(driver, debug_dir: str | None, label: str) -> str | None:
@@ -770,6 +789,13 @@ def fetch_league_data(driver, url: str, debug_dir: str | None = None) -> LeagueD
         )
     except TimeoutException:
         log.warning("Lineup slots did not render before the extraction timeout")
+    if check_lineup_locked(driver):
+        return LeagueData(
+            name=urlparse(url).path.split("/")[1],
+            url=url,
+            lineup_empty=False,
+            lineup_locked=True,
+        )
     api_messages = _performance_messages(driver)
     api_headers = _capture_api_headers(
         driver, "/onboarding/v1/league/players", api_messages

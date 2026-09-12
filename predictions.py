@@ -14,6 +14,7 @@ class LeagueData:
     url: str
     players: list[Player] = field(default_factory=list)
     lineup_empty: bool | None = None
+    lineup_locked: bool = False
 
 
 class BasePredictionSource(ABC):

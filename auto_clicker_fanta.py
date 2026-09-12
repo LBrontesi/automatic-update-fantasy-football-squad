@@ -111,6 +111,10 @@ def print_recommendation(picked: PickedSquad, scores: dict[str, float]) -> None:
 def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> None:
     league = fetch_league_data(driver, url, debug_dir=args.debug_dir)
 
+    if league.lineup_locked:
+        log.info("Lineup is locked because the matchday is live - skipping %s", league.name)
+        return
+
     # A populated lineup page does not expose the complete roster. Confirm it
     # immediately and preserve the user's existing choices.
     if league.lineup_empty is False and not cfg["replace_existing_lineup"]:
