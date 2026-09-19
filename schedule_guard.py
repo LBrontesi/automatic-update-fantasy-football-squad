@@ -175,6 +175,13 @@ def check_schedule_guard(
 
     try:
         fixtures = fetch_fixtures(url, timezone_name)
+        if not fixtures:
+            return ScheduleDecision(False, "fixture calendar returned no readable fixtures")
+        current = now or datetime.now(ZoneInfo(timezone_name))
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=ZoneInfo(timezone_name))
+        if max(f.kickoff for f in fixtures).astimezone(ZoneInfo(timezone_name)).date() < current.astimezone(ZoneInfo(timezone_name)).date():
+            return ScheduleDecision(False, "fixture calendar is stale")
         return evaluate_schedule(fixtures, now=now, timezone_name=timezone_name)
     except Exception as exc:
         log.warning("Could not verify today's fixture schedule: %s", exc)

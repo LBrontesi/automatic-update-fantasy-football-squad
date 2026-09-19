@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 cron.log
 .DS_Store
+debug/
+reports/
+.pytest_cache/
