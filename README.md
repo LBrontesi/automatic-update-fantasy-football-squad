@@ -1,21 +1,23 @@
 # Automatic Squad Update (Fantacalcio)
 
-Selenium bot for [fantacalcio.it](https://www.fantacalcio.it) that logs into your leagues, **picks the best XI with a scoring model** when the lineup is empty, and always **confirms the formation** so you never miss the lineup deadline.
-
-Because matchday deadlines are not on a fixed weekday, the bot is designed to run **daily**: a daily run guarantees a pick + confirm within 24h of any deadline, and confirming an already-saved lineup is idempotent (never harmful).
+Selenium bot for Classic leagues on [Fantacalcio](https://leghe.fantacalcio.it). It ranks each league's own players, chooses an allowed formation, fills starters and reserves, and verifies the saved lineup after reloading. GitHub Actions attempts an update every three hours; scheduled runs can be delayed, so submission before a deadline is not guaranteed.
 
 ## How it works
 
 Per league, every run:
 
-1. Login only when the session expired.
-2. Read the roster and each player's past matchday votes from the league pages.
-3. Score every player: `0.4·avg(last 5 votes) + 0.3·trend + 0.2·home + 0.1·opponent weakness` (weights configurable).
-4. Pick the best XI for the configured formation (`FORMATION=3-4-3` by default), captain = top scorer.
-5. **If the lineup is empty** (the site resets it after each matchday) → set the recommended XI and confirm.
-6. **If the lineup is already set** → confirm only, leaving your manual picks untouched.
+1. Log in and open the requested competition. Skip a locked/live matchday.
+2. Read names, IDs, roles, labelled fantasy averages (FM), average ratings (MV), and starting percentages from that competition's roster drawer. Membership and statistics come from the same cards used to select players, avoiding reuse of another league's roster.
+3. Rank players by `0.4 × rating × starting probability`. Prefer FM, then MV. Missing ratings use an explicit neutral rating of 6; unknown starting likelihood uses 50%. A roster with no readable rating data is rejected. Players with a displayed injury/suspension label or zero starting chance cannot start.
+4. With `FORMATION=auto` (default), compare the formations offered by the league and choose the highest total starting score that can also fill the reserves. Set a fixed formation to constrain the choice. Unsupported Mantra cards are rejected.
+5. Select reserves by score while respecting the number and role restrictions of the rendered bench slots. Assign captain and vice only when the league exposes those controls.
+6. Validate ownership before clearing the draft. Populate and check the XI, bench order and formation before saving. Failed edits discard the unsaved draft. Only report **saved** after the site acknowledges the save and the reloaded lineup matches every field.
 
-Before opening the browser, the bot checks the official Serie A calendar. On a day with games it runs only before the first kickoff; after that it exits successfully without changing a squad. On days without games it runs normally. Set `SKIP_AFTER_FIRST_GAME=false` to bypass this guard for a manual test.
+These scores are a transparent ranking heuristic, not calibrated forecasts or guaranteed fantasy points. Starting percentages can change and do not measure substitute minutes. FM and MV are separate averages, not two historical match votes. The legacy historical scorer supports trends when actual vote history is supplied; the current live card source does not invent that history, venue or opponent-strength data.
+
+By default an existing lineup is replaced with the recommendation. Set `REPLACE_EXISTING_LINEUP=false` locally to preserve it without submitting changes.
+
+Before a live run the bot checks the Serie A calendar, and checks again immediately before saving. On days with games it runs only before the first kickoff. On other days it runs normally, unless the competition is locked. An unreadable, empty or stale calendar blocks live updates. Dry runs can inspect data after kickoff but still respect the site's live lock.
 
 The scoring is plugged behind a `BasePredictionSource` interface: `historical` (past league votes) is implemented, `external` (forward-looking previsioni voti from fantacalcio.it/Gazzetta APIs) is a documented stub for future work.
 
@@ -67,7 +69,13 @@ Extra flags:
 | `--visible` | Show the browser window even when `HEADLESS=true` |
 | `--debug-dir DIR` | Where to save HTML snapshots when extraction fails (default `debug/`) |
 
-The output of a dry run includes the recommended XI with per-player scores, the captain, and any candidate API endpoints observed — useful when the site changes.
+Dry runs print the recommendation and write `reports/latest.json` and `reports/latest.md`, without clearing or saving the squad. Opening roster and formation menus only changes the browser view.
+
+Run the local browser contract tests (synthetic page, no account access):
+
+```bash
+FANTA_BROWSER_TESTS=true python -m pytest -q
+```
 
 ## Option A: Local scheduling with cron (macOS/Linux)
 
@@ -81,7 +89,7 @@ The output of a dry run includes the recommended XI with per-player scores, the 
 
 ## Option B: Cloud cron with GitHub Actions
 
-`.github/workflows/update-squad.yml` tries the update every three hours. The schedule guard allows those attempts only before the day's first game; after kickoff it exits without opening the browser. Manual runs from the **Actions** tab use the same guard.
+`.github/workflows/update-squad.yml` tries at minute 17 every three UTC hours to avoid the busy top of the hour. The schedule guard allows live attempts only before the day's first game. A concurrency group prevents overlapping workflows. Every workflow runs unit and local Chrome contract tests, even on skipped matchdays.
 
 1. Add the credentials as repository secrets (Settings → Secrets and variables → Actions), or from the CLI:
 
@@ -93,7 +101,11 @@ The output of a dry run includes the recommended XI with per-player scores, the 
 
    `LEAGUE_URL` is the same (comma-separated) formation URL list as in `.env`. If the secret is missing, the script falls back to the two default league URLs.
 
-2. Test the pipeline: **Actions** → **Update fantasy squad** → **Run workflow**.
+2. Test the pipeline: **Actions** → **Update fantasy squad** → **Run workflow**, enable **dry_run** first.
+
+3. Optional repository variable `FORMATION`: use `auto` or a fixed formation such as `3-4-3`. Each league's available formations and bench restrictions are read independently.
+
+4. Open a run's **Summary** for each league's **saved**, **dry_run**, **skipped**, or **failed** result and ranking details. A green workflow does not necessarily mean a squad was changed. Download the `squad-report` artifact for the JSON/Markdown report (14 days); browser debug files expire after 3 days.
 
 ### Caveats
 
@@ -107,4 +119,4 @@ The output of a dry run includes the recommended XI with per-player scores, the 
 - The live path uses the current Angular lineup UI: it selects the configured formation, double-clicks the recommended players into the first valid slots, assigns captain and vice-captain, and saves the formation. If Fantacalcio changes the UI again, the run fails safely and saves an HTML snapshot under `debug/`.
 - Legacy URLs in the form `.../area-gioco/inserisci-formazione?id=...` are converted automatically to the current `.../view/competition/<id>/lineup` route.
 - `home` advantage is only applied when the league pages expose the venue; `opponent` weakness only when standings/results are extractable.
-- Picks can be up to 24h stale; the future `external` prediction source will reduce this.
+- The active editor is `lineup_editor.py`; `player_data.py` also retains legacy parsing helpers. The browser tests model observed DOM contracts and cannot guarantee future site compatibility. A successful locked-matchday dry run does not validate a live submission; look for **saved** with a verified reload.

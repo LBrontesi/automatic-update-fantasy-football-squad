@@ -15,6 +15,8 @@ class LeagueData:
     players: list[Player] = field(default_factory=list)
     lineup_empty: bool | None = None
     lineup_locked: bool = False
+    allowed_formations: list[str] = field(default_factory=list)
+    bench_roles: list[str] = field(default_factory=list)
 
 
 class BasePredictionSource(ABC):

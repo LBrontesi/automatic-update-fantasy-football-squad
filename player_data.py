@@ -139,7 +139,7 @@ LINEUP_LOCKED_SELECTORS = [
     (By.CSS_SELECTOR, "ui-lineup-deadline.is-live"),
     (
         By.XPATH,
-        "//*[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', "
+        "//view-lineup//ui-lineup-deadline[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', "
         "'abcdefghijklmnopqrstuvwxyz'), 'live in corso')]",
     ),
 ]
@@ -347,7 +347,7 @@ def check_lineup_locked(driver) -> bool:
     """Return whether the competition UI has locked lineup editing."""
     for by, selector in LINEUP_LOCKED_SELECTORS:
         for element in driver.find_elements(by, selector):
-            if _visible(element) or by == By.CSS_SELECTOR:
+            if _visible(element):
                 log.info("Lineup editing is locked: live matchday status shown")
                 return True
     return False

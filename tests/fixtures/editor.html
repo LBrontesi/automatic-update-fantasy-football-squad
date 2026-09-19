@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- Synthetic browser contract fixture based on the rendered Fantacalcio
+     custom elements. No credentials or real user roster data. -->
+<html><head><meta charset="utf-8"><style>
+body { font: 16px sans-serif; margin: 12px; }
+ui-player-card, ui-lineup-slot { display: block; padding: 5px; border: 1px solid #ddd; margin: 4px; }
+ui-lineup-slot { display: inline-block; min-width: 80px; min-height: 30px; }
+ui-player-role, ui-role, ui-chip-selector, ui-list-sort-head { display: inline-block; }
+.ant-drawer { display:none; position:fixed; background:white; inset:0 auto 0 0; width:340px; overflow:auto; z-index:20; }
+.ant-drawer-open { display:block; }
+button { padding:8px; }
+</style></head><body>
+<view-lineup>
+<button id="roster">Rosa</button><ui-lineup-deadline>Before kickoff</ui-lineup-deadline>
+<ui-chip-selector><button id="formation">3-4-3</button><div id="options" hidden></div></ui-chip-selector>
+<div id="starters"></div><ui-lineup-bench></ui-lineup-bench>
+<footer><button id="clear"><nz-icon aria-label="mi:delete">Clear</nz-icon></button><button id="save">Salva formazione</button></footer>
+</view-lineup>
+<div class="ant-drawer"><button class="ant-drawer-close">Close</button><div class="ant-drawer-body">
+<ui-list-sort-head><button>FM</button><button>MV</button></ui-list-sort-head><div id="cards"></div>
+</div></div>
+<div id="messages"></div>
+<script>
+const roles = ['P','D','C','A'], sizes = [3,8,8,6], reserves = ['P','D','D','C','C','A','A'];
+const prefix = location.pathname.includes('second') ? 'Second' : 'First';
+const offset = prefix === 'Second' ? 100 : 0;
+const players = roles.flatMap((role,r) => Array.from({length:sizes[r]},(_,i) => ({
+  id:offset + r*10+i+1, name:prefix+role+i, role, fm:6+i*.1, chance:i===0 ? 90 : 70
+})));
+const empty = () => ({formation:'3-4-3',slots:{},captains:{}});
+let state = JSON.parse(localStorage.getItem(location.pathname) || 'null') || empty();
+const el = id => document.getElementById(id);
+function drawSlots() {
+  el('formation').textContent=state.formation;
+  const counts=[1,...state.formation.split('-').map(Number)];
+  const slot = (key,role) => `<ui-lineup-slot data-lineup-slot="${key}"><ui-role><div data-role="${role}"></div></ui-role>${state.slots[key]?`<span class="player-name"><span class="truncate">${state.slots[key]}</span></span>`:''}</ui-lineup-slot>`;
+  el('starters').innerHTML=counts.flatMap((count,r)=>Array.from({length:count},(_,i)=>slot(r+':'+i,roles[r]))).join('');
+  document.querySelector('ui-lineup-bench').innerHTML=reserves.map((role,i)=>slot('-1:'+i,role)).join('');
+}
+el('cards').innerHTML=players.map(p=>`<ui-player-card><nz-card data-id="${p.id}"><ui-player-role data-game-type="1"><ui-role><div data-role="${p.role}"></div></ui-role></ui-player-role><span class="player-name"><span class="truncate">${p.name}</span></span><ui-next-match-progress><div role="progressbar" aria-valuenow="${p.chance}">${p.chance}%</div></ui-next-match-progress><div class="stats"><span><ui-player-status-icon data-status="1"></ui-player-status-icon></span><span>${p.fm}</span><span>6</span></div></nz-card></ui-player-card>`).join('');
+el('roster').onclick=()=>document.querySelector('.ant-drawer').classList.add('ant-drawer-open');
+document.querySelector('.ant-drawer-close').onclick=()=>document.querySelector('.ant-drawer').classList.remove('ant-drawer-open');
+el('formation').onclick=()=>el('options').hidden=!el('options').hidden;
+el('options').innerHTML=['3-4-3','3-5-2','4-4-2'].map(f=>`<button>${f}</button>`).join('');
+el('options').onclick=e=>{
+  if(e.target.tagName!=='BUTTON')return;
+  state.formation=e.target.textContent;el('options').hidden=true;drawSlots();
+};
+el('clear').onclick=()=>{state.slots={};drawSlots();};
+el('cards').ondblclick=e=>{
+  const card=e.target.closest('ui-player-card'); if(!card)return;
+  const p=players.find(p=>p.id==card.querySelector('nz-card').dataset.id);
+  if(Object.values(state.slots).includes(p.name))return;
+  const target=[...document.querySelectorAll('ui-lineup-slot')].find(s=>!s.querySelector('.player-name') && s.querySelector('[data-role]').dataset.role===p.role);
+  if(target){state.slots[target.dataset.lineupSlot]=p.name;drawSlots();}
+};
+el('save').onclick=()=>{
+  if(!location.search.includes('ignore_save'))localStorage.setItem(location.pathname,JSON.stringify(state));
+  el('messages').innerHTML='<div class="ant-message-success">Saved</div>';
+};
+drawSlots();
+</script></body></html>

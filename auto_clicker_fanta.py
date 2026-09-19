@@ -3,27 +3,26 @@ import logging
 import os
 import sys
 import time
+from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
 from player_data import (
-    clear_lineup,
-    confirm_formation,
     create_driver,
-    fetch_league_data,
     login_if_needed,
     normalize_league_url,
     save_snapshot,
-    _open_roster_picker,
-    set_lineup,
 )
+from lineup_editor import apply_lineup, fetch_league_data
+from run_report import write_report, player_report
 from predictions import get_prediction_source
 from schedule_guard import (
     DEFAULT_SCHEDULE_URL,
     DEFAULT_TIMEZONE,
     check_schedule_guard,
 )
-from squad_picker import DEFAULT_FORMATION, PickedSquad, pick_squad
+from squad_picker import PickedSquad, pick_squad
 
 load_dotenv()
 
@@ -89,7 +88,7 @@ def get_config() -> dict:
         "password": password,
         "league_urls": league_urls,
         "headless": headless,
-        "formation": os.environ.get("FORMATION", DEFAULT_FORMATION).strip(),
+        "formation": os.environ.get("FORMATION", "auto").strip(),
         "source": os.environ.get("PREDICTION_SOURCE", "historical").strip(),
         "weights": weights,
         "skip_after_first_game": env_bool("SKIP_AFTER_FIRST_GAME", True),
@@ -108,45 +107,49 @@ def print_recommendation(picked: PickedSquad, scores: dict[str, float]) -> None:
     log.info("Bench: %s", ", ".join(p.name for p in picked.bench))
 
 
-def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> None:
-    league = fetch_league_data(driver, url, debug_dir=args.debug_dir)
+def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> dict:
+    league_path = urlparse(url).path.strip('/').replace('/', '_')
+    debug_dir = str(Path(args.debug_dir) / league_path) if args.debug_dir else None
+    league = fetch_league_data(driver, url, debug_dir=debug_dir)
+    result = {"league": league.name, "status": "skipped", "reason": ""}
 
     if league.lineup_locked:
         log.info("Lineup is locked because the matchday is live - skipping %s", league.name)
-        return
+        result["reason"] = "Fantacalcio has locked this matchday"
+        return result
 
-    # A populated lineup page does not expose the complete roster. Confirm it
-    # immediately and preserve the user's existing choices.
+    # This mode explicitly preserves a populated lineup, including in dry run.
     if league.lineup_empty is False and not cfg["replace_existing_lineup"]:
-        log.info("Lineup already set for this matchday - confirming only")
-        confirm_formation(driver)
-        return
+        result["reason"] = "Existing lineup preserved by configuration"
+        return result
 
     if not league.players:
         raise RuntimeError("No roster data available for a data-driven lineup")
 
     source = get_prediction_source(cfg["source"], weights=cfg["weights"])
     scores = source.predict(league)
-    picked = pick_squad(league.players, scores, cfg["formation"])
+    picked = pick_squad(league.players, scores, cfg["formation"],
+                        allowed_formations=league.allowed_formations,
+                        bench_roles=league.bench_roles)
     print_recommendation(picked, scores)
+    result.update(formation=picked.formation,
+                  starters=[player_report(p, scores[p.name]) for p in picked.starters],
+                  bench=[player_report(p, scores[p.name]) for p in picked.bench])
 
     if args.dry_run or cfg["dry_run"]:
         log.info("Dry run - nothing was changed on the site")
-        return
+        result.update(status="dry_run", reason="Recommendation only; nothing saved")
+        return result
 
-    if league.lineup_empty is False:
-        # Verify that the site can expose the owned-player picker before
-        # deleting the current lineup; a UI change must never leave it empty.
-        _open_roster_picker(driver, debug_dir=args.debug_dir)
-        clear_lineup(driver)
     log.info("Setting the data-driven recommended XI")
     try:
-        set_lineup(driver, picked, debug_dir=args.debug_dir)
+        saved = apply_lineup(driver, picked, before_save=schedule_allows_run, debug_dir=debug_dir)
     except Exception:
-        save_snapshot(driver, args.debug_dir, "set_lineup_failed")
+        save_snapshot(driver, debug_dir, "set_lineup_failed")
         raise
-    confirm_formation(driver)
     log.info("League %s updated", league.name)
+    result.update(status="saved", reason="Verified after reloading the saved lineup", saved=saved)
+    return result
 
 
 def main() -> None:
@@ -171,14 +174,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if not schedule_allows_run():
+    dry_run = args.dry_run or env_bool("DRY_RUN", False)
+    if not dry_run and not schedule_allows_run():
+        write_report([{"league": "All leagues", "status": "skipped", "reason": "Fixture guard prevents updates; see log for kickoff details"}], dry_run)
         return
 
     cfg = get_config()
     headless = not args.visible and cfg["headless"]
     log.info(
         "Running %s with %d league(s), headless=%s, formation=%s, source=%s",
-        "dry run" if args.dry_run else "live",
+        "dry run" if dry_run else "live",
         len(cfg["league_urls"]),
         headless,
         cfg["formation"],
@@ -187,6 +192,7 @@ def main() -> None:
 
     driver = create_driver(headless=headless)
     failures = []
+    results = []
     try:
         for url in cfg["league_urls"]:
             url = normalize_league_url(url)
@@ -194,7 +200,7 @@ def main() -> None:
                 try:
                     driver.get(url)
                     login_if_needed(driver, cfg["email"], cfg["password"])
-                    handle_league(driver, cfg, url, args)
+                    results.append(handle_league(driver, cfg, url, args))
                     break
                 except Exception as e:
                     log.error(
@@ -203,10 +209,15 @@ def main() -> None:
                     )
                     if attempt == RETRIES_PER_LEAGUE:
                         failures.append(url)
+                        results.append({"league": urlparse(url).path.split('/')[1],
+                                        "status": "failed", "reason": str(e)})
                     else:
                         time.sleep(RETRY_SLEEP_SECONDS)
     finally:
-        driver.quit()
+        try:
+            driver.quit()
+        finally:
+            write_report(results, dry_run)
 
     if failures:
         log.error("Failed leagues: %s", ", ".join(failures))
