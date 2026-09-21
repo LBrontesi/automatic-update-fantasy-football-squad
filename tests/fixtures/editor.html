@@ -21,19 +21,38 @@ button { padding:8px; }
 </div></div>
 <div id="messages"></div>
 <script>
-const roles = ['P','D','C','A'], sizes = [3,8,8,6], reserves = ['P','D','D','C','C','A','A'];
+const roles = ['P','D','C','A'], sizes = [3,8,8,6];
+const reserves = location.pathname.includes('free') ? ['P','*','*','*','*','*','*'] : ['P','D','D','C','C','A','A'];
 const prefix = location.pathname.includes('second') ? 'Second' : 'First';
 const offset = prefix === 'Second' ? 100 : 0;
 const players = roles.flatMap((role,r) => Array.from({length:sizes[r]},(_,i) => ({
   id:offset + r*10+i+1, name:prefix+role+i, role, fm:6+i*.1, chance:i===0 ? 90 : 70
 })));
+if(location.pathname.includes('aliased'))players.find(p=>p.role==='C').name='Taylor K.';
 const empty = () => ({formation:'3-4-3',slots:{},captains:{}});
-let state = JSON.parse(localStorage.getItem(location.pathname) || 'null') || empty();
+function initial() {
+  const result=empty();
+  if(!location.pathname.includes('occupied'))return result;
+  const counts=[1,3,4,3];
+  roles.forEach((role,r)=>players.filter(p=>p.role===role).slice(0,counts[r]).forEach((p,i)=>result.slots[r+':'+i]=p.name));
+  reserves.forEach((role,i)=>{
+    const p=players.find(p=>(role==='*'||p.role===role)&&!Object.values(result.slots).includes(p.name));
+    result.slots['-1:'+i]=p.name;
+  });
+  return result;
+}
+let state = JSON.parse(localStorage.getItem(location.pathname) || 'null') || initial();
 const el = id => document.getElementById(id);
 function drawSlots() {
   el('formation').textContent=state.formation;
   const counts=[1,...state.formation.split('-').map(Number)];
-  const slot = (key,role) => `<ui-lineup-slot data-lineup-slot="${key}"><ui-role><div data-role="${role}"></div></ui-role>${state.slots[key]?`<span class="player-name"><span class="truncate">${state.slots[key]}</span></span>`:''}</ui-lineup-slot>`;
+  const slot = (key,role) => {
+    const p=players.find(p=>p.name===state.slots[key]);
+    // Like the real editor, occupied slots hide the constraint, show the
+    // occupant's nested role, and may abbreviate the name differently.
+    const content=p ? `<ui-player-role><ui-role><div data-role="${p.role}"></div></ui-role></ui-player-role><img width="1" height="1" src="/web/campioncini/21/small/${p.id}.png?v=1"><span class="player-name"><span class="truncate">${p.name==='Taylor K.'?'K. Taylor':p.name}</span></span>` : (role==='*'?'':`<ui-role><div data-role="${role}"></div></ui-role>`);
+    return `<ui-lineup-slot data-lineup-slot="${key}">${content}</ui-lineup-slot>`;
+  };
   el('starters').innerHTML=counts.flatMap((count,r)=>Array.from({length:count},(_,i)=>slot(r+':'+i,roles[r]))).join('');
   document.querySelector('ui-lineup-bench').innerHTML=reserves.map((role,i)=>slot('-1:'+i,role)).join('');
 }
@@ -51,7 +70,7 @@ el('cards').ondblclick=e=>{
   const card=e.target.closest('ui-player-card'); if(!card)return;
   const p=players.find(p=>p.id==card.querySelector('nz-card').dataset.id);
   if(Object.values(state.slots).includes(p.name))return;
-  const target=[...document.querySelectorAll('ui-lineup-slot')].find(s=>!s.querySelector('.player-name') && s.querySelector('[data-role]').dataset.role===p.role);
+  const target=[...document.querySelectorAll('ui-lineup-slot')].find(s=>!s.querySelector('.player-name') && (!s.querySelector('[data-role]') || s.querySelector('[data-role]').dataset.role===p.role));
   if(target){state.slots[target.dataset.lineupSlot]=p.name;drawSlots();}
 };
 el('save').onclick=()=>{

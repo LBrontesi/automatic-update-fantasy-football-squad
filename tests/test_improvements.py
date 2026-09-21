@@ -117,6 +117,12 @@ def test_save_mismatch_is_not_reported_as_success():
         verify_lineup({'slots': {'0:0': 'G1'}}, {'slots': {'0:0': 'G2'}})
 
 
+def test_matching_names_do_not_hide_a_different_saved_player_id():
+    with pytest.raises(LineupUIError):
+        verify_lineup({'slots': {'0:0': 'G1'}, 'slot_ids': {'0:0': 1}},
+                      {'slots': {'0:0': 'G1'}, 'slot_ids': {'0:0': 2}})
+
+
 def test_empty_or_stale_calendar_blocks_live_execution(monkeypatch):
     now = datetime.fromisoformat('2026-09-19T12:00:00+02:00')
     monkeypatch.setattr(schedule_guard, 'fetch_fixtures', lambda *a: [])

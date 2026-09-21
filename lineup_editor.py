@@ -173,10 +173,38 @@ def select_formation(driver, formation):
 
 
 def read_bench_roles(driver):
+    """Read constraints from empty slots, never from their current occupants.
+
+    Fantacalcio hides a slot's constraint while it contains a player. Clear
+    only the local draft to expose it, then reload the persisted lineup. This
+    inspection never clicks Save, including during a dry run.
+    """
+    close_roster(driver)
+    original = read_lineup(driver)
+    occupied = any(name for marker, name in original['slots'].items() if marker.startswith('-1:'))
+    if not occupied:
+        return _empty_bench_roles(driver)
+    original_url = driver.current_url
+    try:
+        assert_editable(driver)
+        from player_data import clear_lineup
+        clear_lineup(driver)
+        _wait(driver, lambda d: not any(read_lineup(d)['slots'].values()),
+              "Could not expose empty reserve-slot constraints")
+        return _empty_bench_roles(driver)
+    finally:
+        driver.get(original_url)
+        _wait(driver, lambda d: read_lineup(d) == original,
+              "Could not restore the saved lineup after inspecting reserve rules")
+
+
+def _empty_bench_roles(driver):
     roles = []
     for slot in driver.find_elements(By.CSS_SELECTOR, SLOTS):
         if not slot.get_attribute("data-lineup-slot").startswith("-1:"):
             continue
+        if slot.find_elements(By.CSS_SELECTOR, '.player-name'):
+            raise ExtractionError("Cannot infer reserve rules from an occupied slot")
         # The direct ui-role is the slot constraint; roles inside a player
         # card describe its occupant and must not be mistaken for a rule.
         markers = slot.find_elements(By.CSS_SELECTOR, ":scope > ui-role [data-role]")
@@ -189,6 +217,17 @@ def read_bench_roles(driver):
 
 
 def fetch_league_data(driver, url, debug_dir=None):
+    try:
+        return _fetch_league_data(driver, url)
+    except Exception:
+        try:
+            save_snapshot(driver, debug_dir, 'read_failed')
+        except (WebDriverException, OSError):
+            log.warning('Could not capture the failed league read')
+        raise
+
+
+def _fetch_league_data(driver, url):
     url = normalize_league_url(url)
     driver.get(url)
     dismiss_privacy_banner(driver)
@@ -205,17 +244,30 @@ def fetch_league_data(driver, url, debug_dir=None):
     league.players = read_roster(driver)
     league.allowed_formations = allowed_formations(driver)
     league.bench_roles = read_bench_roles(driver)
+    log.info("League reserve-slot constraints: %s", ', '.join(league.bench_roles))
     return league
 
 
 def read_lineup(driver):
     """Capture exactly the persisted fields that will be changed."""
-    return driver.execute_script("""
+    return driver.execute_script(r"""
       const name = el => (el.querySelector('.player-name .truncate, .player-name')?.textContent || '').trim();
+      // Slots abbreviate some names differently from the roster (e.g.
+      // 'Taylor K.' / 'K. Taylor'). The rendered player portrait retains the
+      // same provider ID used by nz-card[data-id] in the roster drawer.
+      const id = el => {
+        const src = el.querySelector('img[src*="/campioncini/"]')?.getAttribute('src') || '';
+        const match = src.match(/\/(\d+)\.png(?:[?#]|$)/);
+        return match ? Number(match[1]) : null;
+      };
+      const slots = [...document.querySelectorAll(arguments[1])];
+      const captains = [...document.querySelectorAll('view-lineup [data-captain-slot]')];
       return {
         formation: document.querySelector(arguments[0])?.textContent.trim(),
-        slots: Object.fromEntries([...document.querySelectorAll(arguments[1])].map(el => [el.getAttribute('data-lineup-slot'),name(el)])),
-        captains: Object.fromEntries([...document.querySelectorAll('view-lineup [data-captain-slot]')].map(el => [el.getAttribute('data-captain-slot'),name(el)]))
+        slots: Object.fromEntries(slots.map(el => [el.getAttribute('data-lineup-slot'),name(el)])),
+        slot_ids: Object.fromEntries(slots.map(el => [el.getAttribute('data-lineup-slot'),id(el)])),
+        captains: Object.fromEntries(captains.map(el => [el.getAttribute('data-captain-slot'),name(el)])),
+        captain_ids: Object.fromEntries(captains.map(el => [el.getAttribute('data-captain-slot'),id(el)]))
       };
     """, FORMATION, SLOTS)
 
@@ -243,8 +295,8 @@ def _place_player(driver, player, bench=False):
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
     ActionChains(driver).double_click(card).perform()
     def placed(d):
-        slots = read_lineup(d)["slots"]
-        return any(name == player.name for marker, name in slots.items() if marker.startswith('-1:') == bench)
+        slots = read_lineup(d)["slot_ids"]
+        return any(player_id == player.external_id for marker, player_id in slots.items() if marker.startswith('-1:') == bench)
     _wait(driver, placed, f"Could not place {player.name} in {'reserves' if bench else 'starters'}")
 
 
@@ -254,7 +306,7 @@ def _captain(driver, player, marker):
     _click(driver, slot)
     card = _find_card(driver, player)
     _click(driver, card)
-    _wait(driver, lambda d: read_lineup(d)["captains"].get(marker) == player.name,
+    _wait(driver, lambda d: read_lineup(d)["captain_ids"].get(marker) == player.external_id,
           f"Could not set captain slot {marker}")
 
 
@@ -272,7 +324,14 @@ def apply_lineup(driver, picked: PickedSquad, before_save=None, debug_dir=None):
             raise LineupUIError("Unsupported captain controls; current lineup preserved")
         from player_data import clear_lineup
         clear_lineup(driver)
+        _wait(driver, lambda d: not any(read_lineup(d)['slots'].values()),
+              "Reserve slots were not cleared")
         select_formation(driver, picked.formation)
+        bench_roles = _empty_bench_roles(driver)
+        if len(bench_roles) != len(picked.bench) or any(
+            role != '*' and role != player.role for role, player in zip(bench_roles, picked.bench)
+        ):
+            raise LineupUIError("Recommended reserves do not fit the league's slot constraints")
         for player in picked.starters:
             _place_player(driver, player)
         for player in picked.bench:
@@ -285,11 +344,11 @@ def apply_lineup(driver, picked: PickedSquad, before_save=None, debug_dir=None):
             log.info("Captaincy is disabled in this league; no captain selection needed")
         close_roster(driver)
         expected = read_lineup(driver)
-        starters = [n for m, n in expected['slots'].items() if not m.startswith('-1:')]
-        bench = [n for m, n in expected['slots'].items() if m.startswith('-1:')]
-        if set(starters) != {p.name for p in picked.starters} or len(starters) != 11:
+        starters = [pid for m, pid in expected['slot_ids'].items() if not m.startswith('-1:')]
+        bench = [pid for m, pid in expected['slot_ids'].items() if m.startswith('-1:')]
+        if set(starters) != {p.external_id for p in picked.starters} or len(starters) != 11 or None in starters:
             raise LineupUIError("Draft does not contain the intended XI")
-        if bench != [p.name for p in picked.bench]:
+        if bench != [p.external_id for p in picked.bench] or None in bench:
             raise LineupUIError("Draft reserves do not match the intended order")
         if expected['formation'] != picked.formation:
             raise LineupUIError("Draft formation does not match recommendation")
