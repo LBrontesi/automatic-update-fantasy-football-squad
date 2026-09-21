@@ -100,3 +100,43 @@ def test_success_banner_does_not_hide_a_save_that_did_not_persist(browser, monke
     monkeypatch.setattr(editor, 'WAIT_TIMEOUT', 2)
     with pytest.raises(LineupUIError, match='Reloaded lineup differs'):
         editor.apply_lineup(driver, picked)
+
+
+@pytest.mark.parametrize('path,roles', [
+    ('occupied', ['G', 'D', 'D', 'C', 'C', 'A', 'A']),
+    ('occupied-free', ['G', '*', '*', '*', '*', '*', '*']),
+])
+def test_occupied_reserves_expose_rules_without_saving_or_guessing(browser, path, roles):
+    driver, base = browser
+    url = base+'/'+path
+    driver.get(url)
+    original = editor.read_lineup(driver)
+    assert sum(bool(name) for name in original['slots'].values()) == 18
+    league, picked = selection(driver, url)
+    assert league.bench_roles == roles
+    assert editor.read_lineup(driver) == original
+    assert driver.execute_script('return localStorage.getItem(location.pathname)') is None
+    saved = editor.apply_lineup(driver, picked)
+    assert [pid for marker,pid in saved['slot_ids'].items() if marker.startswith('-1:')] == [p.external_id for p in picked.bench]
+
+
+def test_display_name_changes_do_not_hide_successful_player_placement(browser):
+    driver, base = browser
+    _, picked = selection(driver, base+'/aliased')
+    taylor = next(p for p in picked.starters if p.name == 'Taylor K.')
+    result = editor.apply_lineup(driver, picked)
+    marker = next(marker for marker,name in result['slots'].items() if name == 'K. Taylor')
+    assert result['slot_ids'][marker] == taylor.external_id
+    driver.refresh()
+    editor.verify_lineup(result, editor.read_lineup(driver))
+
+
+def test_wrong_reserve_roles_rejected_before_placing_any_players(browser, monkeypatch):
+    driver, base = browser
+    _, picked = selection(driver, base+'/invalid-bench')
+    picked.bench.reverse()
+    original = editor.read_lineup(driver)
+    monkeypatch.setattr(editor, '_place_player', lambda *a, **kw: pytest.fail('invalid bench must fail before placement'))
+    with pytest.raises(LineupUIError, match='slot constraints'):
+        editor.apply_lineup(driver, picked)
+    assert editor.read_lineup(driver) == original

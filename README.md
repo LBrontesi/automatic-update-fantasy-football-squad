@@ -10,8 +10,8 @@ Per league, every run:
 2. Read names, IDs, roles, labelled fantasy averages (FM), average ratings (MV), and starting percentages from that competition's roster drawer. Membership and statistics come from the same cards used to select players, avoiding reuse of another league's roster.
 3. Rank players by `0.4 × rating × starting probability`. Prefer FM, then MV. Missing ratings use an explicit neutral rating of 6; unknown starting likelihood uses 50%. A roster with no readable rating data is rejected. Players with a displayed injury/suspension label or zero starting chance cannot start.
 4. With `FORMATION=auto` (default), compare the formations offered by the league and choose the highest total starting score that can also fill the reserves. Set a fixed formation to constrain the choice. Unsupported Mantra cards are rejected.
-5. Select reserves by score while respecting the number and role restrictions of the rendered bench slots. Assign captain and vice only when the league exposes those controls.
-6. Validate ownership before clearing the draft. Populate and check the XI, bench order and formation before saving. Failed edits discard the unsaved draft. Only report **saved** after the site acknowledges the save and the reloaded lineup matches every field.
+5. Select reserves by score while respecting the number and role restrictions of the rendered bench slots. Occupied slots hide these restrictions: the bot inspects an unsaved empty draft, then reloads and verifies the original saved lineup before proceeding. Assign captain and vice only when the league exposes those controls.
+6. Validate ownership before clearing the draft. Populate and check the XI, bench order and formation before saving. Players are checked by provider ID from their rendered portraits, not display names that may change between roster and pitch. Failed edits discard the unsaved draft. Only report **saved** after the site acknowledges the save and the reloaded lineup matches every field.
 
 These scores are a transparent ranking heuristic, not calibrated forecasts or guaranteed fantasy points. Starting percentages can change and do not measure substitute minutes. FM and MV are separate averages, not two historical match votes. The legacy historical scorer supports trends when actual vote history is supplied; the current live card source does not invent that history, venue or opponent-strength data.
 
@@ -65,7 +65,7 @@ Extra flags:
 
 | Flag | Effect |
 |------|--------|
-| `--dry-run` | Login + read data + print the recommended XI, no site changes |
+| `--dry-run` | Login + inspect data + print the recommended XI; never save. Reserve-rule inspection may temporarily clear the local draft, then reload the unchanged saved lineup. |
 | `--visible` | Show the browser window even when `HEADLESS=true` |
 | `--debug-dir DIR` | Where to save HTML snapshots when extraction fails (default `debug/`) |
 
