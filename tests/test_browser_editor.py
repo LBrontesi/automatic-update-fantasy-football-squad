@@ -8,7 +8,7 @@ import pytest
 from selenium import webdriver
 
 import lineup_editor as editor
-from player_data import LineupUIError
+from player_data import LineupUIError, login_if_needed
 from predictions import HistoricalSource
 from squad_picker import pick_squad
 
@@ -59,6 +59,14 @@ def test_two_leagues_use_different_rosters_and_labelled_metrics(browser):
     assert all(p.name.startswith('Second') for p in second.players)
     assert second.players[0].votes == [6]
     assert second.players[0].start_probability == .9
+
+
+def test_login_waits_for_delayed_angular_form_before_typing(browser):
+    driver, base = browser
+    driver.get(base+'/login?next=%2Ffirst')
+    login_if_needed(driver, 'test@example.invalid', 'not-a-real-password')
+    assert driver.current_url == base+'/first'
+    assert driver.find_element('css selector', 'view-lineup ui-lineup-slot[data-lineup-slot]').is_displayed()
 
 
 def test_xi_and_seven_reserves_save_without_captain_controls(browser):
