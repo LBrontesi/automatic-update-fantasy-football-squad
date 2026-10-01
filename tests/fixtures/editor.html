@@ -19,8 +19,11 @@ button { padding:8px; }
 <div class="ant-drawer"><button class="ant-drawer-close">Close</button><div class="ant-drawer-body">
 <ui-list-sort-head><button>FM</button><button>MV</button></ui-list-sort-head><div id="cards"></div>
 </div></div>
+<form id="auth" style="display:none"><input autocomplete="username"><input autocomplete="current-password"><button type="submit">LOGIN</button></form>
 <div id="messages"></div>
 <script>
+const delayedLogin=location.pathname==='/login';
+if(delayedLogin){document.querySelector('view-lineup').style.display='none';setTimeout(()=>document.getElementById('auth').style.display='block',350);}
 const roles = ['P','D','C','A'], sizes = [3,8,8,6];
 const reserves = location.pathname.includes('free') ? ['P','*','*','*','*','*','*'] : ['P','D','D','C','C','A','A'];
 const prefix = location.pathname.includes('second') ? 'Second' : 'First';
@@ -77,5 +80,6 @@ el('save').onclick=()=>{
   if(!location.search.includes('ignore_save'))localStorage.setItem(location.pathname,JSON.stringify(state));
   el('messages').innerHTML='<div class="ant-message-success">Saved</div>';
 };
+document.getElementById('auth').onsubmit=e=>{e.preventDefault();location.href='/first';};
 drawSlots();
 </script></body></html>

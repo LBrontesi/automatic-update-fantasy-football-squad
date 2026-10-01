@@ -223,40 +223,86 @@ def _visible(element) -> bool:
 
 
 def _is_login_page(driver) -> bool:
-    return bool(find_optional_element(driver, PASSWORD_SELECTORS)) or "/login" in driver.current_url.lower()
+    if "/login" in driver.current_url.lower():
+        return True
+    return any(
+        _visible(element)
+        for selectors in (USERNAME_SELECTORS, PASSWORD_SELECTORS)
+        for by, selector in selectors
+        for element in driver.find_elements(by, selector)
+    )
 
 
 def is_logged_in(driver) -> bool:
-    try:
-        find_element(driver, USERNAME_SELECTORS, wait=False)
+    return not _is_login_page(driver)
+
+
+def _auth_page_ready(driver) -> bool:
+    """Wait for either the protected lineup or the rendered login form.
+
+    Angular can briefly render neither after navigation. Treating that gap as
+    an authenticated page led the bot to wait for a lineup on /login, then
+    click the login page before its form was interactive.
+    """
+    login_fields = [
+        element
+        for selectors in (USERNAME_SELECTORS, PASSWORD_SELECTORS)
+        for by, selector in selectors
+        for element in driver.find_elements(by, selector)
+        if _visible(element)
+    ]
+    if login_fields:
+        return all(any(_visible(element) for by, selector in selectors
+                       for element in driver.find_elements(by, selector))
+                   for selectors in (USERNAME_SELECTORS, PASSWORD_SELECTORS))
+    if "/login" in driver.current_url.lower():
         return False
-    except NoSuchElementException:
-        return True
+    return any(_visible(element) for element in driver.find_elements(
+        By.CSS_SELECTOR, "view-lineup ui-lineup-slot[data-lineup-slot]"
+    ))
+
+
+def _visible_element(driver, selectors):
+    for by, selector in selectors:
+        for element in driver.find_elements(by, selector):
+            if _visible(element):
+                return element
+    return None
 
 
 def login_if_needed(driver, email: str, password: str) -> None:
+    try:
+        WebDriverWait(driver, WAIT_TIMEOUT).until(_auth_page_ready)
+    except TimeoutException as exc:
+        raise TimeoutException("Neither the login form nor lineup became ready after navigation") from exc
     if is_logged_in(driver) and not _is_login_page(driver):
         log.info("Already logged in")
         return
     log.info("Login required")
 
     login_target = driver.current_url
-    username = find_optional_element(driver, USERNAME_SELECTORS)
+    username = _visible_element(driver, USERNAME_SELECTORS)
     if username is None:
-        login_button = find_element(driver, LOGIN_BUTTON_SELECTORS)
+        login_button = _visible_element(driver, LOGIN_BUTTON_SELECTORS)
+        if login_button is None:
+            raise NoSuchElementException("No visible login button or username field")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", login_button)
         driver.execute_script("arguments[0].click();", login_button)
-        username = find_element(driver, USERNAME_SELECTORS)
+        username = WebDriverWait(driver, WAIT_TIMEOUT).until(
+            lambda d: _visible_element(d, USERNAME_SELECTORS)
+        )
     driver.execute_script("arguments[0].scrollIntoView();", username)
     username.clear()
     username.send_keys(email)
 
-    password_input = find_element(driver, PASSWORD_SELECTORS)
+    password_input = _visible_element(driver, PASSWORD_SELECTORS)
+    if password_input is None:
+        raise NoSuchElementException("No visible password field on the login page")
     driver.execute_script("arguments[0].scrollIntoView();", password_input)
     password_input.clear()
     password_input.send_keys(password)
-    submit = find_optional_element(driver, LOGIN_BUTTON_SELECTORS)
-    if submit is not None and _visible(submit):
+    submit = _visible_element(driver, LOGIN_BUTTON_SELECTORS)
+    if submit is not None:
         driver.execute_script("arguments[0].click();", submit)
     else:
         password_input.send_keys(Keys.RETURN)
