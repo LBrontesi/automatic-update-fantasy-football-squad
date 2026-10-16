@@ -270,6 +270,26 @@ def _visible_element(driver, selectors):
     return None
 
 
+def _login_failure_details(driver) -> str:
+    """Return short, visible login feedback without reading field values."""
+    try:
+        body = driver.find_element(By.TAG_NAME, "body").text
+    except WebDriverException:
+        body = ""
+    # Avoid leaking a username/email if a page echoes it in its error text.
+    for selectors in (USERNAME_SELECTORS, PASSWORD_SELECTORS):
+        for by, selector in selectors:
+            for element in driver.find_elements(by, selector):
+                try:
+                    value = element.get_attribute("value")
+                except WebDriverException:
+                    value = None
+                if value:
+                    body = body.replace(value, "[redacted]")
+    body = " ".join(body.split())
+    return body[:500] or "No visible login feedback"
+
+
 def login_if_needed(driver, email: str, password: str) -> None:
     try:
         WebDriverWait(driver, WAIT_TIMEOUT).until(_auth_page_ready)
@@ -307,7 +327,19 @@ def login_if_needed(driver, email: str, password: str) -> None:
     else:
         password_input.send_keys(Keys.RETURN)
 
-    WebDriverWait(driver, WAIT_TIMEOUT).until(lambda d: not _is_login_page(d))
+    try:
+        WebDriverWait(driver, WAIT_TIMEOUT).until(lambda d: not _is_login_page(d))
+    except TimeoutException as exc:
+        try:
+            url = driver.current_url.split("?", 1)[0][:200]
+            title = " ".join(driver.title.split())[:120]
+        except WebDriverException:
+            url, title = "unavailable", "unavailable"
+        details = _login_failure_details(driver)
+        raise TimeoutException(
+            f"Login did not complete; url={url!r}; title={title!r}; "
+            f"visible page text={details!r}"
+        ) from exc
     next_value = parse_qs(urlparse(login_target).query).get("next", [None])[0]
     if next_value:
         driver.get(urljoin(login_target, unquote(next_value)))
