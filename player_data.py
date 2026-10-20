@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import platform
 import re
 import time
 from pathlib import Path
@@ -185,9 +186,41 @@ def create_driver(headless: bool = True) -> webdriver.Chrome:
     driver = webdriver.Chrome(options=options)
     try:
         driver.execute_cdp_cmd("Network.enable", {})
+        if headless:
+            user_agent = _standard_chrome_user_agent(
+                driver.capabilities.get("browserVersion", ""),
+                platform.system(),
+            )
+            if user_agent:
+                driver.execute_cdp_cmd(
+                    "Network.setUserAgentOverride", {"userAgent": user_agent}
+                )
+                log.info("Using a standard Chrome user-agent in headless mode")
+            else:
+                log.warning("Could not derive Chrome version for headless user-agent")
     except WebDriverException:
         log.debug("Could not enable Chrome network inspection")
     return driver
+
+
+def _standard_chrome_user_agent(browser_version: str, system: str) -> str | None:
+    """Return a normal desktop Chrome UA matching this browser's major version.
+
+    Fantacalcio's API rejects preflight requests that advertise HeadlessChrome,
+    which otherwise prevents GitHub Actions from submitting its login request.
+    """
+    match = re.match(r"(\d+)", browser_version or "")
+    if not match:
+        return None
+    major = match.group(1)
+    platform_token = {
+        "Darwin": "(Macintosh; Intel Mac OS X 10_15_7)",
+        "Windows": "(Windows NT 10.0; Win64; x64)",
+    }.get(system, "(X11; Linux x86_64)")
+    return (
+        f"Mozilla/5.0 {platform_token} AppleWebKit/537.36 "
+        f"(KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36"
+    )
 
 
 def find_element(driver, selectors, wait: bool = True, timeout: int = WAIT_TIMEOUT):

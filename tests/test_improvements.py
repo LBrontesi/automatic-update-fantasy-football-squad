@@ -4,6 +4,7 @@ from datetime import datetime
 import pytest
 
 import auto_clicker_fanta as bot
+import player_data
 import schedule_guard
 from lineup_editor import player_from_record, verify_lineup
 from player_data import ExtractionError, LineupUIError
@@ -15,6 +16,31 @@ from squad_picker import FormationError, Player, pick_squad
 def record(**overrides):
     return dict(id=1, name='Player', role='P', game_type='1',
                 metrics={'FM': '6,5', 'MV': '6'}, probability='90', **overrides)
+
+
+def test_headless_driver_uses_matching_non_headless_chrome_user_agent(monkeypatch):
+    class FakeDriver:
+        capabilities = {"browserVersion": "142.0.7444.0"}
+
+        def __init__(self):
+            self.commands = []
+
+        def execute_cdp_cmd(self, command, params):
+            self.commands.append((command, params))
+
+    fake_driver = FakeDriver()
+    monkeypatch.setattr(player_data.webdriver, "Chrome", lambda options: fake_driver)
+
+    assert player_data.create_driver(headless=True) is fake_driver
+
+    overrides = [
+        params["userAgent"]
+        for command, params in fake_driver.commands
+        if command == "Network.setUserAgentOverride"
+    ]
+    assert len(overrides) == 1
+    assert "Chrome/142.0.0.0" in overrides[0]
+    assert "HeadlessChrome" not in overrides[0]
 
 
 def test_roster_metrics_are_one_average_not_two_sequential_votes():
