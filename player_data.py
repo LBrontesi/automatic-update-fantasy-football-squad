@@ -276,7 +276,7 @@ def _login_failure_details(driver) -> str:
     error_text = []
     sensitive_values = []
     for form in driver.find_elements(By.TAG_NAME, "form"):
-        if not _visible(form):
+        if not form.is_displayed():
             continue
         password_fields = form.find_elements(By.CSS_SELECTOR, "input[type='password']")
         if not password_fields:
