@@ -78,6 +78,7 @@ def test_login_failure_diagnostic_captures_form_error_without_field_values(brows
     )
     driver.execute_script("""
         const inputs = document.querySelectorAll('#auth input');
+        inputs[1].type = 'password';
         inputs[0].value = 'test@example.invalid';
         inputs[1].value = 'not-a-real-password';
         document.querySelector('#auth').insertAdjacentHTML(
