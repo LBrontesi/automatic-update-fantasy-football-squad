@@ -6,9 +6,10 @@ from threading import Thread
 
 import pytest
 from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
 
 import lineup_editor as editor
-from player_data import LineupUIError, login_if_needed
+from player_data import LineupUIError, _login_failure_details, login_if_needed
 from predictions import HistoricalSource
 from squad_picker import pick_squad
 
@@ -67,6 +68,28 @@ def test_login_waits_for_delayed_angular_form_before_typing(browser):
     login_if_needed(driver, 'test@example.invalid', 'not-a-real-password')
     assert driver.current_url == base+'/first'
     assert driver.find_element('css selector', 'view-lineup ui-lineup-slot[data-lineup-slot]').is_displayed()
+
+
+def test_login_failure_diagnostic_captures_form_error_without_field_values(browser):
+    driver, base = browser
+    driver.get(base+'/login')
+    WebDriverWait(driver, 3).until(
+        lambda d: d.find_element('css selector', "input[autocomplete='current-password']").is_displayed()
+    )
+    driver.execute_script("""
+        const inputs = document.querySelectorAll('#auth input');
+        inputs[0].value = 'test@example.invalid';
+        inputs[1].value = 'not-a-real-password';
+        document.querySelector('#auth').insertAdjacentHTML(
+            'beforeend', '<div role="alert">Invalid credentials for test@example.invalid</div>'
+        );
+    """)
+
+    details = _login_failure_details(driver)
+    assert 'Invalid credentials' in details
+    assert '[redacted]' in details
+    assert 'test@example.invalid' not in details
+    assert 'not-a-real-password' not in details
 
 
 def test_xi_and_seven_reserves_save_without_captain_controls(browser):

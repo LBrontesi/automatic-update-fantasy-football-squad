@@ -271,23 +271,94 @@ def _visible_element(driver, selectors):
 
 
 def _login_failure_details(driver) -> str:
-    """Return short, visible login feedback without reading field values."""
-    try:
-        body = driver.find_element(By.TAG_NAME, "body").text
-    except WebDriverException:
-        body = ""
-    # Avoid leaking a username/email if a page echoes it in its error text.
-    for selectors in (USERNAME_SELECTORS, PASSWORD_SELECTORS):
-        for by, selector in selectors:
-            for element in driver.find_elements(by, selector):
-                try:
-                    value = element.get_attribute("value")
-                except WebDriverException:
-                    value = None
-                if value:
-                    body = body.replace(value, "[redacted]")
-    body = " ".join(body.split())
-    return body[:500] or "No visible login feedback"
+    """Summarize the visible credential form, excluding all field values."""
+    forms = []
+    error_text = []
+    sensitive_values = []
+    for form in driver.find_elements(By.TAG_NAME, "form"):
+        if not _visible(form):
+            continue
+        password_fields = form.find_elements(By.CSS_SELECTOR, "input[type='password']")
+        if not password_fields:
+            continue
+        text = " ".join(form.text.split())
+        fields = []
+        for field in form.find_elements(By.CSS_SELECTOR, "input"):
+            value = field.get_attribute("value")
+            if value:
+                sensitive_values.append(value)
+            fields.append({
+                "type": field.get_attribute("type"),
+                "name": field.get_attribute("name"),
+                "autocomplete": field.get_attribute("autocomplete"),
+                "placeholder": field.get_attribute("placeholder"),
+                "visible": _visible(field),
+                "disabled": not field.is_enabled(),
+            })
+        buttons = []
+        for button in form.find_elements(By.CSS_SELECTOR, "button"):
+            if _visible(button):
+                buttons.append({
+                    "text": " ".join(button.text.split())[:80],
+                    "type": button.get_attribute("type"),
+                    "disabled": not button.is_enabled(),
+                })
+        forms.append({"text": text[:400], "fields": fields, "buttons": buttons})
+        for selector in ("[role='alert']", ".ant-form-item-explain-error",
+                         ".ant-alert", "[aria-live='assertive']"):
+            for alert in form.find_elements(By.CSS_SELECTOR, selector):
+                if _visible(alert) and alert.text.strip():
+                    error_text.append(" ".join(alert.text.split())[:200])
+
+    def redact(text):
+        for value in sensitive_values:
+            text = text.replace(value, "[redacted]")
+        return text
+
+    for form in forms:
+        form["text"] = redact(form["text"])
+        for button in form["buttons"]:
+            button["text"] = redact(button["text"])
+    error_text = [redact(text) for text in error_text]
+    return json.dumps({
+        "credential_forms": forms[:2],
+        "visible_errors": list(dict.fromkeys(error_text))[:8],
+    }, ensure_ascii=False)[:1400] or "No visible credential form"
+
+
+def _login_network_summary(driver) -> str:
+    """Report only method/type/status for same-site XHR/fetch responses."""
+    request_info = {}
+    responses = []
+    for message in _performance_messages(driver):
+        method = message.get("method")
+        params = message.get("params", {})
+        request_id = params.get("requestId")
+        if method == "Network.requestWillBeSent":
+            request = params.get("request", {})
+            try:
+                same_site = urlparse(request.get("url", "")).hostname == "leghe.fantacalcio.it"
+            except ValueError:
+                same_site = False
+            if same_site:
+                request_info[request_id] = {
+                    "method": request.get("method", "?"),
+                    "type": params.get("type", "?"),
+                }
+        elif method == "Network.responseReceived":
+            response = params.get("response", {})
+            try:
+                same_site = urlparse(response.get("url", "")).hostname == "leghe.fantacalcio.it"
+            except ValueError:
+                same_site = False
+            if same_site and params.get("type") in {"XHR", "Fetch"}:
+                info = request_info.get(request_id, {})
+                responses.append({
+                    "method": info.get("method", "?"),
+                    "type": params.get("type"),
+                    "status": response.get("status"),
+                })
+    return json.dumps(responses[-12:]) if responses else "No same-site XHR/fetch response observed"
 
 
 def login_if_needed(driver, email: str, password: str) -> None:
@@ -322,6 +393,7 @@ def login_if_needed(driver, email: str, password: str) -> None:
     password_input.clear()
     password_input.send_keys(password)
     submit = _visible_element(driver, LOGIN_BUTTON_SELECTORS)
+    _performance_messages(driver)  # discard navigation noise before the auth submit
     if submit is not None:
         driver.execute_script("arguments[0].click();", submit)
     else:
@@ -336,9 +408,10 @@ def login_if_needed(driver, email: str, password: str) -> None:
         except WebDriverException:
             url, title = "unavailable", "unavailable"
         details = _login_failure_details(driver)
+        network = _login_network_summary(driver)
         raise TimeoutException(
             f"Login did not complete; url={url!r}; title={title!r}; "
-            f"visible page text={details!r}"
+            f"credential form={details}; same-site auth network={network}"
         ) from exc
     next_value = parse_qs(urlparse(login_target).query).get("next", [None])[0]
     if next_value:
