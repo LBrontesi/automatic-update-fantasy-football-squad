@@ -8,6 +8,7 @@ ui-lineup-slot { display: inline-block; min-width: 80px; min-height: 30px; }
 ui-player-role, ui-role, ui-chip-selector, ui-list-sort-head { display: inline-block; }
 .ant-drawer { display:none; position:fixed; background:white; inset:0 auto 0 0; width:340px; overflow:auto; z-index:20; }
 .ant-drawer-open { display:block; }
+#privacy { display:none; position:fixed; inset:0; z-index:1000; background:#ffffffdd; padding:30px; }
 button { padding:8px; }
 </style></head><body>
 <view-lineup>
@@ -19,11 +20,15 @@ button { padding:8px; }
 <div class="ant-drawer"><button class="ant-drawer-close">Close</button><div class="ant-drawer-body">
 <ui-list-sort-head><button>FM</button><button>MV</button></ui-list-sort-head><div id="cards"></div>
 </div></div>
-<form id="auth" style="display:none"><input autocomplete="username"><input autocomplete="current-password"><button type="submit">LOGIN</button></form>
+<form id="auth" style="display:none"><input type="text" autocomplete="username"><input type="password" autocomplete="current-password"><button type="submit">LOGIN</button></form>
+<div id="privacy"><button id="pt-close" type="button">Continue without accepting</button></div>
 <div id="messages"></div>
 <script>
 const delayedLogin=location.pathname==='/login';
 if(delayedLogin){document.querySelector('view-lineup').style.display='none';setTimeout(()=>document.getElementById('auth').style.display='block',350);}
+const privacy=document.getElementById('privacy');
+if(location.search.includes('privacy'))privacy.style.display='block';
+document.getElementById('pt-close').onclick=()=>privacy.style.display='none';
 const roles = ['P','D','C','A'], sizes = [3,8,8,6];
 const reserves = location.pathname.includes('free') ? ['P','*','*','*','*','*','*'] : ['P','D','D','C','C','A','A'];
 const prefix = location.pathname.includes('second') ? 'Second' : 'First';

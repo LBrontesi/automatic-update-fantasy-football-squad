@@ -64,9 +64,10 @@ def test_two_leagues_use_different_rosters_and_labelled_metrics(browser):
 
 def test_login_waits_for_delayed_angular_form_before_typing(browser):
     driver, base = browser
-    driver.get(base+'/login?next=%2Ffirst')
+    driver.get(base+'/login?next=%2Ffirst&privacy')
     login_if_needed(driver, 'test@example.invalid', 'not-a-real-password')
     assert driver.current_url == base+'/first'
+    assert not driver.find_element('id', 'privacy').is_displayed()
     assert driver.find_element('css selector', 'view-lineup ui-lineup-slot[data-lineup-slot]').is_displayed()
 
 
@@ -78,7 +79,6 @@ def test_login_failure_diagnostic_captures_form_error_without_field_values(brows
     )
     driver.execute_script("""
         const inputs = document.querySelectorAll('#auth input');
-        inputs[1].type = 'password';
         inputs[0].value = 'test@example.invalid';
         inputs[1].value = 'not-a-real-password';
         document.querySelector('#auth').insertAdjacentHTML(

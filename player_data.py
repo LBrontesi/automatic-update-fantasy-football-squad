@@ -270,6 +270,23 @@ def _visible_element(driver, selectors):
     return None
 
 
+def _login_submit_button(form):
+    """Choose the login control inside the credential form, not a page-wide submit."""
+    candidates = [
+        element for element in form.find_elements(
+            By.CSS_SELECTOR, "button, input[type='submit']"
+        ) if _visible(element)
+    ]
+    for element in candidates:
+        label = " ".join((element.text or "").split()).lower()
+        label += " " + (element.get_attribute("value") or "").lower()
+        label += " " + (element.get_attribute("aria-label") or "").lower()
+        if any(word in label for word in ("login", "accedi", "entra")):
+            return element
+    return next((element for element in candidates
+                 if (element.get_attribute("type") or "").lower() == "submit"), None)
+
+
 def _login_failure_details(driver) -> str:
     """Summarize the visible credential form, excluding all field values."""
     forms = []
@@ -327,9 +344,8 @@ def _login_failure_details(driver) -> str:
 
 
 def _login_network_summary(driver) -> str:
-    """Report only method/type/status for same-site XHR/fetch responses."""
+    """Report method/type/status for Fantacalcio requests, never their URLs."""
     request_info = {}
-    responses = []
     for message in _performance_messages(driver):
         method = message.get("method")
         params = message.get("params", {})
@@ -337,28 +353,30 @@ def _login_network_summary(driver) -> str:
         if method == "Network.requestWillBeSent":
             request = params.get("request", {})
             try:
-                same_site = urlparse(request.get("url", "")).hostname == "leghe.fantacalcio.it"
+                host = urlparse(request.get("url", "")).hostname or ""
             except ValueError:
-                same_site = False
-            if same_site:
+                host = ""
+            resource_type = params.get("type", "?")
+            request_method = request.get("method", "?")
+            if (host == "leghe.fantacalcio.it" or host.endswith(".fantacalcio.it")) and (
+                resource_type in {"Document", "XHR", "Fetch"} or request_method != "GET"
+            ):
                 request_info[request_id] = {
+                    "host": host,
                     "method": request.get("method", "?"),
-                    "type": params.get("type", "?"),
+                    "type": resource_type,
+                    "status": None,
                 }
         elif method == "Network.responseReceived":
             response = params.get("response", {})
-            try:
-                same_site = urlparse(response.get("url", "")).hostname == "leghe.fantacalcio.it"
-            except ValueError:
-                same_site = False
-            if same_site and params.get("type") in {"XHR", "Fetch"}:
-                info = request_info.get(request_id, {})
-                responses.append({
-                    "method": info.get("method", "?"),
-                    "type": params.get("type"),
-                    "status": response.get("status"),
-                })
-    return json.dumps(responses[-12:]) if responses else "No same-site XHR/fetch response observed"
+            if request_id in request_info:
+                request_info[request_id]["status"] = response.get("status")
+        elif method == "Network.loadingFailed" and request_id in request_info:
+            params_error = params.get("errorText")
+            if params_error:
+                request_info[request_id]["error"] = params_error[:100]
+    requests = list(request_info.values())[-15:]
+    return json.dumps(requests) if requests else "No Fantacalcio document/XHR/fetch request observed"
 
 
 def login_if_needed(driver, email: str, password: str) -> None:
@@ -370,6 +388,7 @@ def login_if_needed(driver, email: str, password: str) -> None:
         log.info("Already logged in")
         return
     log.info("Login required")
+    dismiss_privacy_banner(driver)
 
     login_target = driver.current_url
     username = _visible_element(driver, USERNAME_SELECTORS)
@@ -392,10 +411,14 @@ def login_if_needed(driver, email: str, password: str) -> None:
     driver.execute_script("arguments[0].scrollIntoView();", password_input)
     password_input.clear()
     password_input.send_keys(password)
-    submit = _visible_element(driver, LOGIN_BUTTON_SELECTORS)
+    try:
+        credential_form = password_input.find_element(By.XPATH, "ancestor::form[1]")
+    except NoSuchElementException:
+        credential_form = driver
+    submit = _login_submit_button(credential_form)
     _performance_messages(driver)  # discard navigation noise before the auth submit
     if submit is not None:
-        driver.execute_script("arguments[0].click();", submit)
+        submit.click()
     else:
         password_input.send_keys(Keys.RETURN)
 
@@ -411,7 +434,7 @@ def login_if_needed(driver, email: str, password: str) -> None:
         network = _login_network_summary(driver)
         raise TimeoutException(
             f"Login did not complete; url={url!r}; title={title!r}; "
-            f"credential form={details}; same-site auth network={network}"
+            f"credential form={details}; Fantacalcio network={network}"
         ) from exc
     next_value = parse_qs(urlparse(login_target).query).get("next", [None])[0]
     if next_value:
@@ -438,7 +461,7 @@ def dismiss_privacy_banner(driver) -> None:
     if button is None or not _visible(button):
         return
     try:
-        driver.execute_script("arguments[0].click();", button)
+        button.click()
         log.info("Privacy banner dismissed")
     except WebDriverException:
         log.debug("Privacy banner was already gone")
