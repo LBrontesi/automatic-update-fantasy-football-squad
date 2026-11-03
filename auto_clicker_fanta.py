@@ -138,7 +138,9 @@ def handle_league(
     debug_dir = str(Path(args.debug_dir) / league_path) if args.debug_dir else None
     current_round, latest_completed = None, None
     try:
-        current_round, latest_completed = read_competition_rounds(driver, url)
+        current_round, latest_completed = read_competition_rounds(
+            driver, url, debug_dir=debug_dir
+        )
         log.info(
             "Learning feedback rounds for %s: current=%s, latest calculated=%s",
             league_path,

@@ -65,15 +65,19 @@ def parse_competition_rounds(text):
     )
 
 
-def read_competition_rounds(driver, url):
+def read_competition_rounds(driver, url, debug_dir=None):
     """Return the current and latest calculated round shown on the dashboard."""
     driver.get(f"{competition_base_url(url)}/dashboard")
-    body = _wait(
-        driver,
-        lambda d: (element := d.find_element(By.TAG_NAME, "body"))
-        if "Giornata in corso" in d.find_element(By.TAG_NAME, "body").text else False,
-        "Competition dashboard did not show its matchday status",
-    )
+    try:
+        body = _wait(
+            driver,
+            lambda d: (element := d.find_element(By.TAG_NAME, "body"))
+            if "Giornata in corso" in d.find_element(By.TAG_NAME, "body").text else False,
+            "Competition dashboard did not show its matchday status",
+        )
+    except LineupUIError:
+        save_snapshot(driver, debug_dir, "matchday_status_unavailable")
+        raise
     return parse_competition_rounds(body.text)
 
 
@@ -180,6 +184,22 @@ def open_roster(driver):
             raise LineupUIError("No roster button on this league's lineup page")
         if not driver.find_elements(By.CSS_SELECTOR, ".ant-drawer-open"):
             _click(driver, buttons[0])
+            # The site occasionally drops the first native click while the
+            # Angular lineup page is settling after navigation. Verify that
+            # its drawer actually opened, then retry through the DOM click path.
+            try:
+                WebDriverWait(driver, 2).until(
+                    lambda d: d.find_elements(By.CSS_SELECTOR, ".ant-drawer-open")
+                    or any(_visible(c) for c in d.find_elements(By.CSS_SELECTOR, ROSTER))
+                )
+            except TimeoutException:
+                driver.execute_script("arguments[0].click()", buttons[0])
+        _wait(
+            driver,
+            lambda d: d.find_elements(By.CSS_SELECTOR, ".ant-drawer-open")
+            or any(_visible(c) for c in d.find_elements(By.CSS_SELECTOR, ROSTER)),
+            "Clicking the roster button did not open its drawer",
+        )
         _wait(driver, lambda d: any(_visible(c) for c in d.find_elements(By.CSS_SELECTOR, ROSTER)),
               "This league's roster drawer has no selectable players")
     # Grouping can hide already selected starters/reserves in collapsed groups.

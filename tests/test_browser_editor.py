@@ -62,6 +62,13 @@ def test_two_leagues_use_different_rosters_and_labelled_metrics(browser):
     assert second.players[0].start_probability == .9
 
 
+def test_roster_drawer_retries_with_dom_click_when_native_click_is_missed(browser, monkeypatch):
+    driver, base = browser
+    driver.get(base+'/fallback-click')
+    monkeypatch.setattr(editor, '_click', lambda *_: None)
+    assert len(editor.open_roster(driver)) == 25
+
+
 def test_login_waits_for_delayed_angular_form_before_typing(browser):
     driver, base = browser
     driver.get(base+'/login?next=%2Ffirst&privacy')
