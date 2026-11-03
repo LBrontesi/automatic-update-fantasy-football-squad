@@ -78,6 +78,15 @@ def test_roster_drawer_retries_dom_click_when_native_close_is_missed(browser, mo
     assert not driver.find_elements('css selector', '.ant-drawer-open')
 
 
+def test_formation_menu_retries_native_clicks_that_do_not_open_or_select(browser, monkeypatch):
+    driver, base = browser
+    driver.get(base+'/formation-fallback')
+    monkeypatch.setattr(editor, '_click', lambda *_: None)
+    assert editor.allowed_formations(driver) == ['3-4-3', '3-5-2', '4-4-2']
+    editor.select_formation(driver, '4-4-2')
+    assert editor.read_lineup(driver)['formation'] == '4-4-2'
+
+
 def test_login_waits_for_delayed_angular_form_before_typing(browser):
     driver, base = browser
     driver.get(base+'/login?next=%2Ffirst&privacy')

@@ -59,9 +59,12 @@ def parse_competition_rounds(text):
         match = re.search(r"(\d+)\s*[ªº°]\s*giornata", section.group(1), re.IGNORECASE)
         return int(match.group(1)) if match else None
 
+    current = round_after("Prossima giornata", ("Ultima giornata",))
+    if current is None:
+        current = round_after("Giornata in corso", ("Ultima giornata",))
     return (
-        round_after("Giornata in corso", ("Ultima giornata",)),
-        round_after("Ultima giornata", ("Giornata in corso",)),
+        current,
+        round_after("Ultima giornata", ("Prossima giornata", "Giornata in corso")),
     )
 
 
@@ -72,7 +75,11 @@ def read_competition_rounds(driver, url, debug_dir=None):
         body = _wait(
             driver,
             lambda d: (element := d.find_element(By.TAG_NAME, "body"))
-            if "Giornata in corso" in d.find_element(By.TAG_NAME, "body").text else False,
+            if re.search(
+                r"(?:Prossima giornata|Giornata in corso)",
+                d.find_element(By.TAG_NAME, "body").text,
+                re.IGNORECASE,
+            ) else False,
             "Competition dashboard did not show its matchday status",
         )
     except LineupUIError:
@@ -166,6 +173,15 @@ def restore_lineup_page(driver, url):
 def _click(driver, element):
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)
     element.click()
+
+
+def _click_until(driver, element, predicate, message):
+    _click(driver, element)
+    try:
+        WebDriverWait(driver, 2).until(predicate)
+    except TimeoutException:
+        driver.execute_script("arguments[0].click()", element)
+    _wait(driver, predicate, message)
 
 
 def close_roster(driver):
@@ -300,29 +316,47 @@ def allowed_formations(driver):
     parse_formation(current)
     if trigger.get_attribute('disabled') is not None or trigger.get_attribute('aria-disabled') == 'true':
         return [current]
-    _click(driver, trigger)
+    options_open = lambda d: len(_formation_options(d)) > 1
     try:
-        _wait(driver, lambda d: len(_formation_options(d)) > 1, "Could not read this league's formation options")
+        _click_until(
+            driver,
+            trigger,
+            options_open,
+            "Could not read this league's formation options",
+        )
         choices = sorted({_text(el.text) for el in _formation_options(driver)})
         for choice in choices:
             parse_formation(choice)
         return choices
     finally:
         # Click the trigger again only when its options are open.
-        if len(_formation_options(driver)) > 1:
-            _click(driver, driver.find_element(By.CSS_SELECTOR, FORMATION))
+        if options_open(driver):
+            _click_until(
+                driver,
+                driver.find_element(By.CSS_SELECTOR, FORMATION),
+                lambda d: len(_formation_options(d)) <= 1,
+                "Formation options did not close",
+            )
 
 
 def select_formation(driver, formation):
     close_roster(driver)
     if _text(driver.find_element(By.CSS_SELECTOR, FORMATION).text) == formation:
         return
-    _click(driver, driver.find_element(By.CSS_SELECTOR, FORMATION))
+    _click_until(
+        driver,
+        driver.find_element(By.CSS_SELECTOR, FORMATION),
+        lambda d: any(_text(e.text) == formation for e in _formation_options(d)),
+        f"Formation {formation} not available",
+    )
     option = _wait(driver, lambda d: next((e for e in _formation_options(d) if _text(e.text) == formation), None),
                    f"Formation {formation} not available")
-    _click(driver, option)
-    _wait(driver, lambda d: _text(d.find_element(By.CSS_SELECTOR, FORMATION).text) == formation,
-          f"Formation did not change to {formation}")
+    _click_until(
+        driver,
+        option,
+        lambda d: _text(d.find_element(By.CSS_SELECTOR, FORMATION).text) == formation,
+        f"Formation did not change to {formation}",
+    )
 
 
 def read_bench_roles(driver):

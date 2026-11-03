@@ -111,6 +111,16 @@ def test_dashboard_round_numbers_are_parsed_from_both_sections():
     assert parse_competition_rounds(dashboard) == (6, 5)
 
 
+def test_dashboard_round_numbers_use_prossima_giornata_label():
+    dashboard = """
+    Prossima giornata
+    9ª giornata
+    Ultima giornata
+    8ª giornata
+    """
+    assert parse_competition_rounds(dashboard) == (9, 8)
+
+
 def test_competition_base_url_keeps_the_league_slug():
     assert competition_base_url(
         "https://leghe.fantacalcio.it/rusticatorsapienza/view/competition/532351/lineup"
