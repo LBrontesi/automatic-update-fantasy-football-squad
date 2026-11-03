@@ -69,6 +69,15 @@ def test_roster_drawer_retries_with_dom_click_when_native_click_is_missed(browse
     assert len(editor.open_roster(driver)) == 25
 
 
+def test_roster_drawer_retries_dom_click_when_native_close_is_missed(browser, monkeypatch):
+    driver, base = browser
+    driver.get(base+'/fallback-close')
+    editor.open_roster(driver)
+    monkeypatch.setattr(editor, '_click', lambda *_: None)
+    editor.close_roster(driver)
+    assert not driver.find_elements('css selector', '.ant-drawer-open')
+
+
 def test_login_waits_for_delayed_angular_form_before_typing(browser):
     driver, base = browser
     driver.get(base+'/login?next=%2Ffirst&privacy')

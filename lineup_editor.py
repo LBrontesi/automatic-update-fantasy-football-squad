@@ -40,10 +40,10 @@ def _wait(driver, predicate, message):
 
 def competition_base_url(url):
     parsed = urlparse(normalize_league_url(url))
-    match = re.search(r"/view/competition/\d+", parsed.path)
+    match = re.search(r"^(.+/view/competition/\d+)(?:/|$)", parsed.path)
     if not match:
         raise ExtractionError("Competition URL does not include a competition ID")
-    return f"{parsed.scheme}://{parsed.netloc}{match.group(0)}"
+    return f"{parsed.scheme}://{parsed.netloc}{match.group(1)}"
 
 
 def parse_competition_rounds(text):
@@ -169,11 +169,21 @@ def _click(driver, element):
 
 
 def close_roster(driver):
+    def drawer_open(d):
+        return any(_visible(drawer) for drawer in d.find_elements(By.CSS_SELECTOR, ".ant-drawer-open"))
+
     for button in driver.find_elements(By.CSS_SELECTOR, ".ant-drawer-open .ant-drawer-close"):
         if _visible(button):
             _click(driver, button)
-    _wait(driver, lambda d: not d.find_elements(By.CSS_SELECTOR, ".ant-drawer-open"),
-          "Roster drawer did not close")
+            try:
+                WebDriverWait(driver, 2).until(lambda d: not drawer_open(d))
+            except TimeoutException:
+                close_buttons = driver.find_elements(
+                    By.CSS_SELECTOR, ".ant-drawer-open .ant-drawer-close"
+                )
+                if close_buttons:
+                    driver.execute_script("arguments[0].click()", close_buttons[0])
+    _wait(driver, lambda d: not drawer_open(d), "Roster drawer did not close")
 
 
 def open_roster(driver):

@@ -9,7 +9,7 @@ from learning import (
     role_adjustment,
     save_state,
 )
-from lineup_editor import parse_competition_rounds
+from lineup_editor import competition_base_url, parse_competition_rounds
 from squad_picker import PickedSquad, Player
 
 
@@ -109,3 +109,9 @@ def test_dashboard_round_numbers_are_parsed_from_both_sections():
     5ª giornata 7ª giornata di Serie A
     """
     assert parse_competition_rounds(dashboard) == (6, 5)
+
+
+def test_competition_base_url_keeps_the_league_slug():
+    assert competition_base_url(
+        "https://leghe.fantacalcio.it/rusticatorsapienza/view/competition/532351/lineup"
+    ) == "https://leghe.fantacalcio.it/rusticatorsapienza/view/competition/532351"
