@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -14,7 +15,23 @@ from player_data import (
     normalize_league_url,
     save_snapshot,
 )
-from lineup_editor import apply_lineup, fetch_league_data
+from lineup_editor import (
+    apply_lineup,
+    fetch_league_data,
+    read_competition_rounds,
+    read_round_outcome,
+    restore_lineup_page,
+)
+from learning import (
+    adjust_scores,
+    apply_round_outcome,
+    empty_state,
+    load_state,
+    pending_rounds,
+    record_pending,
+    role_adjustment,
+    save_state,
+)
 from run_report import write_report, player_report
 from predictions import get_prediction_source
 from schedule_guard import (
@@ -107,9 +124,29 @@ def print_recommendation(picked: PickedSquad, scores: dict[str, float]) -> None:
     log.info("Bench: %s", ", ".join(p.name for p in picked.bench))
 
 
-def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> dict:
+def handle_league(
+    driver,
+    cfg: dict,
+    url: str,
+    args: argparse.Namespace,
+    learning_state: dict | None = None,
+    learning_key: str = "league_1",
+) -> dict:
+    if learning_state is None:
+        learning_state = empty_state()
     league_path = urlparse(url).path.strip('/').replace('/', '_')
     debug_dir = str(Path(args.debug_dir) / league_path) if args.debug_dir else None
+    current_round, latest_completed = None, None
+    try:
+        current_round, latest_completed = read_competition_rounds(driver, url)
+        log.info(
+            "Learning feedback rounds for %s: current=%s, latest calculated=%s",
+            league_path,
+            current_round,
+            latest_completed,
+        )
+    except Exception as exc:
+        log.warning("Could not read matchday numbers for %s: %s", league_path, exc)
     league = fetch_league_data(driver, url, debug_dir=debug_dir)
     result = {"league": league.name, "status": "skipped", "reason": ""}
 
@@ -126,8 +163,49 @@ def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> dict
     if not league.players:
         raise RuntimeError("No roster data available for a data-driven lineup")
 
+    if latest_completed is not None:
+        owned_ids = {player.external_id for player in league.players if player.external_id is not None}
+        for round_number in pending_rounds(learning_state, learning_key, latest_completed):
+            try:
+                actual_by_role, submitted_at = read_round_outcome(
+                    driver, url, round_number, owned_ids
+                )
+                applied, reason = apply_round_outcome(
+                    learning_state,
+                    learning_key,
+                    round_number,
+                    actual_by_role,
+                    submitted_at,
+                )
+                if applied:
+                    log.info("Recorded role-level feedback for %s round %d", league_path, round_number)
+                else:
+                    log.info(
+                        "Skipped role-level feedback for %s round %d: %s",
+                        league_path,
+                        round_number,
+                        reason,
+                    )
+            except Exception as exc:
+                # Learning is best-effort; an unavailable result page must not
+                # prevent a valid pre-match lineup update.
+                log.warning(
+                    "Could not collect feedback for %s round %d: %s",
+                    league_path,
+                    round_number,
+                    exc,
+                )
+
     source = get_prediction_source(cfg["source"], weights=cfg["weights"])
-    scores = source.predict(league)
+    scores = adjust_scores(
+        learning_state, learning_key, league.players, source.predict(league)
+    )
+    trained_roles = [
+        role for role in ("G", "D", "C", "A")
+        if role_adjustment(learning_state, learning_key, role)
+    ]
+    if trained_roles:
+        log.info("Persistent feedback is influencing roles: %s", ", ".join(trained_roles))
     picked = pick_squad(league.players, scores, cfg["formation"],
                         allowed_formations=league.allowed_formations,
                         bench_roles=league.bench_roles)
@@ -143,11 +221,24 @@ def handle_league(driver, cfg: dict, url: str, args: argparse.Namespace) -> dict
 
     log.info("Setting the data-driven recommended XI")
     try:
+        restore_lineup_page(driver, url)
         saved = apply_lineup(driver, picked, before_save=schedule_allows_run, debug_dir=debug_dir)
     except Exception:
         save_snapshot(driver, debug_dir, "set_lineup_failed")
         raise
     log.info("League %s updated", league.name)
+    if current_round is not None:
+        record_pending(
+            learning_state,
+            learning_key,
+            current_round,
+            picked,
+            scores,
+            saved_at=datetime.now(timezone.utc),
+        )
+        log.info("Stored aggregate prediction feedback for %s round %d", league_path, current_round)
+    else:
+        log.warning("Lineup saved, but no current round was read; learning data was not queued")
     result.update(status="saved", reason="Verified after reloading the saved lineup", saved=saved)
     return result
 
@@ -180,6 +271,8 @@ def main() -> None:
         return
 
     cfg = get_config()
+    learning_path = Path(os.environ.get("LEARNING_STATE_PATH", "data/learning_state.json"))
+    learning_state = load_state(learning_path)
     headless = not args.visible and cfg["headless"]
     log.info(
         "Running %s with %d league(s), headless=%s, formation=%s, source=%s",
@@ -194,13 +287,22 @@ def main() -> None:
     failures = []
     results = []
     try:
-        for url in cfg["league_urls"]:
+        for league_index, url in enumerate(cfg["league_urls"], start=1):
             url = normalize_league_url(url)
             for attempt in range(1, RETRIES_PER_LEAGUE + 1):
                 try:
                     driver.get(url)
                     login_if_needed(driver, cfg["email"], cfg["password"])
-                    results.append(handle_league(driver, cfg, url, args))
+                    results.append(
+                        handle_league(
+                            driver,
+                            cfg,
+                            url,
+                            args,
+                            learning_state,
+                            f"league_{league_index}",
+                        )
+                    )
                     break
                 except Exception as e:
                     log.error(
@@ -217,6 +319,11 @@ def main() -> None:
         try:
             driver.quit()
         finally:
+            try:
+                save_state(learning_state, learning_path)
+            except Exception:
+                log.exception("Could not save persistent learning state")
+                failures.append("learning-state")
             write_report(results, dry_run)
 
     if failures:

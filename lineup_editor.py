@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 import math
 import re
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException, WebDriverException
 from selenium.webdriver.common.action_chains import ActionChains
@@ -34,6 +36,127 @@ def _wait(driver, predicate, message):
         return WebDriverWait(driver, WAIT_TIMEOUT, ignored_exceptions=(StaleElementReferenceException,)).until(predicate)
     except TimeoutException as exc:
         raise LineupUIError(message) from exc
+
+
+def competition_base_url(url):
+    parsed = urlparse(normalize_league_url(url))
+    match = re.search(r"/view/competition/\d+", parsed.path)
+    if not match:
+        raise ExtractionError("Competition URL does not include a competition ID")
+    return f"{parsed.scheme}://{parsed.netloc}{match.group(0)}"
+
+
+def parse_competition_rounds(text):
+    def round_after(label, following_labels):
+        stop = "|".join(re.escape(item) for item in following_labels)
+        section = re.search(
+            rf"{re.escape(label)}(.*?)(?:{stop}|$)",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not section:
+            return None
+        match = re.search(r"(\d+)\s*[ªº°]\s*giornata", section.group(1), re.IGNORECASE)
+        return int(match.group(1)) if match else None
+
+    return (
+        round_after("Giornata in corso", ("Ultima giornata",)),
+        round_after("Ultima giornata", ("Giornata in corso",)),
+    )
+
+
+def read_competition_rounds(driver, url):
+    """Return the current and latest calculated round shown on the dashboard."""
+    driver.get(f"{competition_base_url(url)}/dashboard")
+    body = _wait(
+        driver,
+        lambda d: (element := d.find_element(By.TAG_NAME, "body"))
+        if "Giornata in corso" in d.find_element(By.TAG_NAME, "body").text else False,
+        "Competition dashboard did not show its matchday status",
+    )
+    return parse_competition_rounds(body.text)
+
+
+def read_round_outcome(driver, url, round_number, owned_player_ids):
+    """Read the signed-in user's XI scores from a completed competition round.
+
+    This returns only role-level fantasy-score aggregates; player names and IDs
+    are used transiently to identify the user's column and are not returned.
+    """
+    driver.get(f"{competition_base_url(url)}/round/{int(round_number)}")
+    root = _wait(
+        driver,
+        lambda d: (element := d.find_element(By.CSS_SELECTOR, "view-competition-round"))
+        if element.find_elements(By.CSS_SELECTOR, "ui-player-card") else False,
+        f"Round {round_number} results did not load",
+    )
+
+    starter_grid = None
+    for grid in root.find_elements(By.CSS_SELECTOR, ".grid-cols-2"):
+        sides = grid.find_elements(By.XPATH, "./*")
+        if len(sides) == 2 and all(
+            len(side.find_elements(By.CSS_SELECTOR, "ui-player-card")) == 11
+            for side in sides
+        ):
+            starter_grid = sides
+            break
+    if starter_grid is None:
+        raise ExtractionError(f"Round {round_number} has no readable pair of starting XIs")
+
+    owned_player_ids = {int(player_id) for player_id in owned_player_ids}
+    side_ids = []
+    for side in starter_grid:
+        ids = set()
+        for card in side.find_elements(By.CSS_SELECTOR, "ui-player-card"):
+            id_elements = card.find_elements(By.CSS_SELECTOR, "nz-card[data-id]")
+            if id_elements:
+                try:
+                    ids.add(int(id_elements[0].get_attribute("data-id")))
+                except (TypeError, ValueError):
+                    continue
+        side_ids.append(ids)
+    overlap = [len(ids & owned_player_ids) for ids in side_ids]
+    user_side = max(range(2), key=overlap.__getitem__)
+    if overlap[user_side] < 3 or overlap[user_side] - overlap[1 - user_side] < 2:
+        raise ExtractionError(f"Could not identify the user's XI in round {round_number}")
+
+    role_aliases = {"P": "G", "G": "G", "D": "D", "M": "C", "C": "C", "F": "A", "A": "A"}
+    actual_by_role = {role: [] for role in ("G", "D", "C", "A")}
+    for card in starter_grid[user_side].find_elements(By.CSS_SELECTOR, "ui-player-card"):
+        role_elements = card.find_elements(By.CSS_SELECTOR, "ui-player-role [data-role]")
+        role = role_aliases.get(role_elements[0].get_attribute("data-role")) if role_elements else None
+        if role is None:
+            raise ExtractionError(f"Unsupported player role in round {round_number}")
+        row = card.find_element(By.XPATH, "..")
+        row_children = row.find_elements(By.XPATH, "./*")
+        score_text = row_children[1].text if len(row_children) > 1 else ""
+        values = re.findall(r"[+-]?\d+(?:[.,]\d+)?", score_text)
+        # Fantacalcio gives an unvoted player no numeric score; that is a zero
+        # fantasy vote for lineup-selection feedback.
+        actual = float(values[-1].replace(",", ".")) if values else 0.0
+        actual_by_role[role].append(actual)
+
+    body_text = driver.find_element(By.TAG_NAME, "body").text
+    submitted = re.findall(
+        r"Formazione inviata via (?:app|web)\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})",
+        body_text,
+        re.IGNORECASE,
+    )
+    if len(submitted) < 2:
+        raise ExtractionError(f"Round {round_number} has no two submitted-lineup timestamps")
+    local_time = datetime.strptime(submitted[user_side], "%d/%m/%Y %H:%M:%S").replace(
+        tzinfo=ZoneInfo("Europe/Rome")
+    )
+    return actual_by_role, local_time.astimezone(timezone.utc)
+
+
+def restore_lineup_page(driver, url):
+    driver.get(normalize_league_url(url))
+    _wait(
+        driver,
+        lambda d: d.find_elements(By.CSS_SELECTOR, SLOTS),
+        "Lineup page did not reload after reading results",
+    )
 
 
 def _click(driver, element):

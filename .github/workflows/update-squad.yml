@@ -113,3 +113,41 @@ jobs:
           path: debug/
           if-no-files-found: ignore
           retention-days: 3
+
+      - name: Upload persistent learning state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: learning-state-${{ github.run_id }}
+          path: data/learning_state.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  persist-learning-state:
+    runs-on: ubuntu-latest
+    needs: update-squad
+    if: needs.update-squad.result == 'success'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download learning state
+        uses: actions/download-artifact@v4
+        with:
+          name: learning-state-${{ github.run_id }}
+          path: _learning_state
+
+      - name: Persist only the aggregate model state
+        run: |
+          cp _learning_state/learning_state.json data/learning_state.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/learning_state.json
+          if git diff --cached --quiet; then
+            echo "Learning state did not change."
+            exit 0
+          fi
+          git commit -m "chore: persist squad learning state"
+          git push

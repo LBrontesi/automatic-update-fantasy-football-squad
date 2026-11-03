@@ -13,7 +13,9 @@ Per league, every run:
 5. Select reserves by score while respecting the number and role restrictions of the rendered bench slots. Occupied slots hide these restrictions: the bot inspects an unsaved empty draft, then reloads and verifies the original saved lineup before proceeding. Assign captain and vice only when the league exposes those controls.
 6. Validate ownership before clearing the draft. Populate and check the XI, bench order and formation before saving. Players are checked by provider ID from their rendered portraits, not display names that may change between roster and pitch. Failed edits discard the unsaved draft. Only report **saved** after the site acknowledges the save and the reloaded lineup matches every field.
 
-These scores are a transparent ranking heuristic, not calibrated forecasts or guaranteed fantasy points. Starting percentages can change and do not measure substitute minutes. FM and MV are separate averages, not two historical match votes. The legacy historical scorer supports trends when actual vote history is supplied; the current live card source does not invent that history, venue or opponent-strength data.
+These scores are a transparent ranking heuristic, not guaranteed fantasy points. Starting percentages can change and do not measure substitute minutes. FM and MV are separate averages, not two historical match votes. The legacy historical scorer supports trends when actual vote history is supplied; the current live card source does not invent that history, venue or opponent-strength data.
+
+After a verified lineup has been saved, the bot keeps only aggregate predicted score totals by role and the save timestamp. On a later pre-match run, it reads that competition's calculated matchday page and compares the actual fantasy scores for the submitted XI with those role totals. A timestamp and role-count mismatch skips the feedback. Per-role corrections use shrinkage, are capped at 1.5 points, and do not affect the picker until three rounds have been recorded. The correction can change formation comparisons and choices across roles; it does not learn a separate bias for individual players. The state in `data/learning_state.json` contains no player names or IDs.
 
 By default an existing lineup is replaced with the recommendation. Set `REPLACE_EXISTING_LINEUP=false` locally to preserve it without submitting changes.
 
@@ -90,6 +92,8 @@ FANTA_BROWSER_TESTS=true python -m pytest -q
 ## Option B: Cloud cron with GitHub Actions
 
 `.github/workflows/update-squad.yml` tries at minute 17 every three UTC hours to avoid the busy top of the hour. The schedule guard allows live attempts only before the day's first game. A concurrency group prevents overlapping workflows. Every workflow runs unit and local Chrome contract tests, even on skipped matchdays.
+
+The update job uploads learning state as a short-lived artifact. A separate `persist-learning-state` job has `contents: write` and commits only `data/learning_state.json`; the browser and test jobs keep read-only repository access.
 
 1. Add the credentials as repository secrets (Settings → Secrets and variables → Actions), or from the CLI:
 
