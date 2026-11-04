@@ -7,6 +7,7 @@ ui-player-card, ui-lineup-slot { display: block; padding: 5px; border: 1px solid
 ui-lineup-slot { display: inline-block; min-width: 80px; min-height: 30px; }
 ui-player-role, ui-role, ui-chip-selector, ui-list-sort-head { display: inline-block; }
 .ant-drawer { display:none; position:fixed; background:white; inset:0 auto 0 0; width:340px; overflow:auto; z-index:20; }
+.ant-drawer-mask { display:none; position:fixed; inset:0; background:#0005; z-index:19; }
 .ant-drawer-open { display:block; }
 #privacy { display:none; position:fixed; inset:0; z-index:1000; background:#ffffffdd; padding:30px; }
 button { padding:8px; }
@@ -17,6 +18,7 @@ button { padding:8px; }
 <div id="starters"></div><ui-lineup-bench></ui-lineup-bench>
 <footer><button id="clear"><nz-icon aria-label="mi:delete">Clear</nz-icon></button><button id="save">Salva formazione</button></footer>
 </view-lineup>
+<div id="drawer-mask" class="ant-drawer-mask"></div>
 <div class="ant-drawer"><button class="ant-drawer-close">Close</button><div class="ant-drawer-body">
 <ui-list-sort-head><button>FM</button><button>MV</button></ui-list-sort-head><div id="cards"></div>
 </div></div>
@@ -65,8 +67,8 @@ function drawSlots() {
   document.querySelector('ui-lineup-bench').innerHTML=reserves.map((role,i)=>slot('-1:'+i,role)).join('');
 }
 el('cards').innerHTML=players.map(p=>`<ui-player-card cdkdrag class="cdk-drag cursor-grab"><nz-card data-id="${p.id}"><ui-player-role data-game-type="1"><ui-role><div data-role="${p.role}"></div></ui-role></ui-player-role><span class="player-name"><span class="truncate">${p.name}</span></span><ui-next-match-progress><div role="progressbar" aria-valuenow="${p.chance}">${p.chance}%</div></ui-next-match-progress><div class="stats"><span><ui-player-status-icon data-status="1"></ui-player-status-icon></span><span>${p.fm}</span><span>6</span></div></nz-card></ui-player-card>`).join('');
-el('roster').onclick=()=>document.querySelector('.ant-drawer').classList.add('ant-drawer-open');
-document.querySelector('.ant-drawer-close').onclick=()=>document.querySelector('.ant-drawer').classList.remove('ant-drawer-open');
+el('roster').onclick=()=>{document.querySelector('.ant-drawer').classList.add('ant-drawer-open');el('drawer-mask').style.display='block';};
+document.querySelector('.ant-drawer-close').onclick=()=>{document.querySelector('.ant-drawer').classList.remove('ant-drawer-open');el('drawer-mask').style.display='none';};
 el('formation').onclick=()=>el('options').hidden=!el('options').hidden;
 el('options').innerHTML=['3-4-3','3-5-2','4-4-2'].map(f=>`<button>${f}</button>`).join('');
 el('options').onclick=e=>{

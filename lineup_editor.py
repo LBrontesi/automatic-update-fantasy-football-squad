@@ -507,9 +507,23 @@ def _place_player(driver, player, bench=False):
     # no longer changes the lineup in the current UI.
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", target)
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
-    ActionChains(driver).move_to_element(card).click_and_hold().pause(0.2).move_to_element(
-        target
-    ).pause(0.2).release().perform()
+    mask_styles = driver.execute_script("""
+      const masks = [...document.querySelectorAll('.ant-drawer-mask')];
+      const styles = masks.map(mask => mask.style.pointerEvents);
+      masks.forEach(mask => mask.style.pointerEvents = 'none');
+      return styles;
+    """)
+    try:
+        ActionChains(driver).move_to_element(card).click_and_hold().pause(0.2).move_to_element(
+            target
+        ).pause(0.2).release().perform()
+    finally:
+        driver.execute_script("""
+          const masks = [...document.querySelectorAll('.ant-drawer-mask')];
+          arguments[0].forEach((style, index) => {
+            if (masks[index]) masks[index].style.pointerEvents = style;
+          });
+        """, mask_styles)
     try:
         WebDriverWait(driver, 5, ignored_exceptions=(StaleElementReferenceException,)).until(placed)
     except TimeoutException:
