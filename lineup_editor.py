@@ -477,14 +477,48 @@ def _find_card(driver, player):
     raise LineupUIError(f"{player.name} is absent from this league's selectable roster")
 
 
+def _empty_slot_for_player(driver, player, bench):
+    expected_role = {"G": "P"}.get(player.role, player.role)
+    for slot in driver.find_elements(By.CSS_SELECTOR, SLOTS):
+        marker = slot.get_attribute("data-lineup-slot") or ""
+        if marker.startswith("-1:") != bench:
+            continue
+        if slot.find_elements(By.CSS_SELECTOR, ".player-name, img[src*='/campioncini/']"):
+            continue
+        role_elements = slot.find_elements(By.CSS_SELECTOR, ":scope > ui-role [data-role]")
+        role = role_elements[0].get_attribute("data-role") if role_elements else "*"
+        if role in (expected_role, "*"):
+            return slot
+    raise LineupUIError(
+        f"No empty {'reserve' if bench else 'starter'} slot accepts {player.name}"
+    )
+
+
 def _place_player(driver, player, bench=False):
     card = _find_card(driver, player)
-    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
-    ActionChains(driver).double_click(card).perform()
+    target = _empty_slot_for_player(driver, player, bench)
+    target_marker = target.get_attribute("data-lineup-slot")
+
     def placed(d):
-        slots = read_lineup(d)["slot_ids"]
-        return any(player_id == player.external_id for marker, player_id in slots.items() if marker.startswith('-1:') == bench)
-    _wait(driver, placed, f"Could not place {player.name} in {'reserves' if bench else 'starters'}")
+        return read_lineup(d)["slot_ids"].get(target_marker) == player.external_id
+
+    # Fantacalcio renders roster cards and lineup slots as CDK drag items.
+    # Drag the player into a compatible empty slot; double-clicking the card
+    # no longer changes the lineup in the current UI.
+    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", target)
+    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
+    ActionChains(driver).move_to_element(card).click_and_hold().pause(0.2).move_to_element(
+        target
+    ).pause(0.2).release().perform()
+    try:
+        WebDriverWait(driver, 5, ignored_exceptions=(StaleElementReferenceException,)).until(placed)
+    except TimeoutException:
+        # Try the WebDriver drag-and-drop helper as a second CDK-compatible
+        # pointer sequence, then verify the provider ID in the intended slot.
+        card = _find_card(driver, player)
+        target = driver.find_element(By.CSS_SELECTOR, f"{SLOTS}[data-lineup-slot='{target_marker}']")
+        ActionChains(driver).drag_and_drop(card, target).perform()
+        _wait(driver, placed, f"Could not place {player.name} in {'reserves' if bench else 'starters'}")
 
 
 def _captain(driver, player, marker):
@@ -545,9 +579,12 @@ def apply_lineup(driver, picked: PickedSquad, before_save=None, debug_dir=None):
         buttons = driver.find_elements(By.XPATH, "//view-lineup//button[contains(.,'Salva formazione')]")
         if len(buttons) != 1 or not _visible(buttons[0]):
             raise LineupUIError("No unambiguous enabled save button")
-        _click(driver, buttons[0])
-        _wait(driver, lambda d: d.find_elements(By.CSS_SELECTOR, '.ant-message-success'),
-              "Save was not acknowledged; cannot report the squad as updated")
+        _click_until(
+            driver,
+            buttons[0],
+            lambda d: d.find_elements(By.CSS_SELECTOR, ".ant-message-success"),
+            "Save was not acknowledged; cannot report the squad as updated",
+        )
         driver.get(original_url)
         _wait(driver, lambda d: d.find_elements(By.CSS_SELECTOR, SLOTS), "Saved lineup did not reload")
         _wait(driver, lambda d: read_lineup(d) == expected, "Reloaded lineup differs from the requested squad")

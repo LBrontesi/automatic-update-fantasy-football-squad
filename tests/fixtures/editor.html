@@ -64,7 +64,7 @@ function drawSlots() {
   el('starters').innerHTML=counts.flatMap((count,r)=>Array.from({length:count},(_,i)=>slot(r+':'+i,roles[r]))).join('');
   document.querySelector('ui-lineup-bench').innerHTML=reserves.map((role,i)=>slot('-1:'+i,role)).join('');
 }
-el('cards').innerHTML=players.map(p=>`<ui-player-card><nz-card data-id="${p.id}"><ui-player-role data-game-type="1"><ui-role><div data-role="${p.role}"></div></ui-role></ui-player-role><span class="player-name"><span class="truncate">${p.name}</span></span><ui-next-match-progress><div role="progressbar" aria-valuenow="${p.chance}">${p.chance}%</div></ui-next-match-progress><div class="stats"><span><ui-player-status-icon data-status="1"></ui-player-status-icon></span><span>${p.fm}</span><span>6</span></div></nz-card></ui-player-card>`).join('');
+el('cards').innerHTML=players.map(p=>`<ui-player-card cdkdrag class="cdk-drag cursor-grab"><nz-card data-id="${p.id}"><ui-player-role data-game-type="1"><ui-role><div data-role="${p.role}"></div></ui-role></ui-player-role><span class="player-name"><span class="truncate">${p.name}</span></span><ui-next-match-progress><div role="progressbar" aria-valuenow="${p.chance}">${p.chance}%</div></ui-next-match-progress><div class="stats"><span><ui-player-status-icon data-status="1"></ui-player-status-icon></span><span>${p.fm}</span><span>6</span></div></nz-card></ui-player-card>`).join('');
 el('roster').onclick=()=>document.querySelector('.ant-drawer').classList.add('ant-drawer-open');
 document.querySelector('.ant-drawer-close').onclick=()=>document.querySelector('.ant-drawer').classList.remove('ant-drawer-open');
 el('formation').onclick=()=>el('options').hidden=!el('options').hidden;
@@ -74,13 +74,19 @@ el('options').onclick=e=>{
   state.formation=e.target.textContent;el('options').hidden=true;drawSlots();
 };
 el('clear').onclick=()=>{state.slots={};drawSlots();};
-el('cards').ondblclick=e=>{
-  const card=e.target.closest('ui-player-card'); if(!card)return;
-  const p=players.find(p=>p.id==card.querySelector('nz-card').dataset.id);
-  if(Object.values(state.slots).includes(p.name))return;
-  const target=[...document.querySelectorAll('ui-lineup-slot')].find(s=>!s.querySelector('.player-name') && (!s.querySelector('[data-role]') || s.querySelector('[data-role]').dataset.role===p.role));
-  if(target){state.slots[target.dataset.lineupSlot]=p.name;drawSlots();}
-};
+let draggedPlayerId=null;
+document.addEventListener('mousedown',e=>{
+  const card=e.target.closest('ui-player-card');
+  if(card)draggedPlayerId=Number(card.querySelector('nz-card').dataset.id);
+});
+document.addEventListener('mouseup',e=>{
+  const slot=e.target.closest('ui-lineup-slot');
+  const player=players.find(p=>p.id===draggedPlayerId);
+  if(slot && player && !Object.values(state.slots).includes(player.name)){
+    state.slots[slot.dataset.lineupSlot]=player.name;drawSlots();
+  }
+  draggedPlayerId=null;
+});
 el('save').onclick=()=>{
   if(!location.search.includes('ignore_save'))localStorage.setItem(location.pathname,JSON.stringify(state));
   el('messages').innerHTML='<div class="ant-message-success">Saved</div>';

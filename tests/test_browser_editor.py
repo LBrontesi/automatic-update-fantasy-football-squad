@@ -87,6 +87,18 @@ def test_formation_menu_retries_native_clicks_that_do_not_open_or_select(browser
     assert editor.read_lineup(driver)['formation'] == '4-4-2'
 
 
+def test_drag_placements_use_compatible_slots_and_preserve_bench_order(browser):
+    driver, base = browser
+    _, picked = selection(driver, base+'/drag-placement')
+    result = editor.apply_lineup(driver, picked)
+    assert {pid for marker, pid in result['slot_ids'].items() if not marker.startswith('-1:')} == {
+        player.external_id for player in picked.starters
+    }
+    assert [pid for marker, pid in result['slot_ids'].items() if marker.startswith('-1:')] == [
+        player.external_id for player in picked.bench
+    ]
+
+
 def test_login_waits_for_delayed_angular_form_before_typing(browser):
     driver, base = browser
     driver.get(base+'/login?next=%2Ffirst&privacy')
