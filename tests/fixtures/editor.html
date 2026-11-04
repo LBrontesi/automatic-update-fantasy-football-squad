@@ -9,6 +9,10 @@ ui-player-role, ui-role, ui-chip-selector, ui-list-sort-head { display: inline-b
 .ant-drawer { display:none; position:fixed; background:white; inset:0 auto 0 0; width:340px; overflow:auto; z-index:20; }
 .ant-drawer-mask { display:none; position:fixed; inset:0; background:#0005; z-index:19; }
 .ant-drawer-open { display:block; }
+/* The real pitch remains visible beside the open roster drawer. */
+#starters, ui-lineup-bench { position:fixed; left:360px; width:700px; }
+#starters { top:90px; }
+ui-lineup-bench { top:330px; }
 #privacy { display:none; position:fixed; inset:0; z-index:1000; background:#ffffffdd; padding:30px; }
 button { padding:8px; }
 </style></head><body>
