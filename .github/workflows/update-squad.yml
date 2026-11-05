@@ -19,6 +19,11 @@ on:
         required: false
         default: false
         type: boolean
+      check_feedback_source:
+        description: "Validate whole-roster historical results without saving a lineup or training"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   schedule-guard:
@@ -37,7 +42,7 @@ jobs:
       - name: Check matchday guard
         id: guard
         run: |
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
+          if [ "${{ inputs.dry_run }}" = "true" ] || [ "${{ inputs.check_feedback_source }}" = "true" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -93,7 +98,8 @@ jobs:
           LEAGUE_URL: ${{ secrets.LEAGUE_URL }}
           HEADLESS: "true"
           REPLACE_EXISTING_LINEUP: "true"
-          DRY_RUN: ${{ inputs.dry_run || false }}
+          DRY_RUN: ${{ inputs.dry_run || inputs.check_feedback_source || false }}
+          CHECK_FEEDBACK_SOURCE: ${{ inputs.check_feedback_source || false }}
           FORMATION: ${{ vars.FORMATION || 'auto' }}
 
       - name: Upload run report
@@ -126,7 +132,7 @@ jobs:
   persist-learning-state:
     runs-on: ubuntu-latest
     needs: update-squad
-    if: needs.update-squad.result == 'success'
+    if: needs.update-squad.result == 'success' && inputs.check_feedback_source != true
     permissions:
       contents: write
     steps:

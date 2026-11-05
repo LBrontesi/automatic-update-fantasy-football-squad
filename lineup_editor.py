@@ -18,7 +18,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from player_data import (
     WAIT_TIMEOUT, ExtractionError, LineupUIError, _text, _visible,
     check_lineup_locked, check_lineup_state, dismiss_privacy_banner,
-    normalize_league_url, save_snapshot,
+    normalize_league_url, save_snapshot, _performance_messages,
 )
 from predictions import LeagueData
 from squad_picker import Player, PickedSquad, parse_formation
@@ -69,6 +69,7 @@ def parse_competition_rounds(text):
 
 def read_competition_rounds(driver, url, debug_dir=None):
     """Return the current and latest calculated round shown on the dashboard."""
+    _performance_messages(driver)  # isolate this league's response metadata
     driver.get(f"{competition_base_url(url)}/dashboard")
     try:
         body = _wait(
