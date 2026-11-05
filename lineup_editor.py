@@ -529,6 +529,34 @@ def _restore_drag_pointer_events(driver, saved):
     """, saved)
 
 
+def _install_drag_probe(driver):
+    driver.execute_script("""
+      if (window.__fantasquadDragEvents) return;
+      window.__fantasquadDragEvents = [];
+      const summarize = el => el && ({tag: el.tagName, id: el.id || '',
+        className: typeof el.className === 'string' ? el.className : ''});
+      for (const type of ['pointerdown','mousedown','pointermove','mousemove',
+                          'pointerup','mouseup','dragstart','drop','dragend']) {
+        document.addEventListener(type, event => {
+          if (window.__fantasquadDragEvents.length >= 160) return;
+          if ((type === 'pointermove' || type === 'mousemove') && !event.buttons) return;
+          const x = event.clientX || 0, y = event.clientY || 0;
+          const zones = [...document.querySelectorAll('.cdk-drop-list')].filter(el => {
+            const r = el.getBoundingClientRect();
+            return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+          }).map(el => {
+            const r = el.getBoundingClientRect();
+            return {id:el.id, className:el.className, x:Math.round(r.left),
+              y:Math.round(r.top), width:Math.round(r.width), height:Math.round(r.height)};
+          });
+          window.__fantasquadDragEvents.push({type, x, y, buttons:event.buttons,
+            target:summarize(event.target), hit:summarize(document.elementFromPoint(x,y)),
+            zones, defaultPrevented:event.defaultPrevented});
+        }, true);
+      }
+    """)
+
+
 def _place_player(driver, player, bench=False):
     card = _find_card(driver, player)
     target = _empty_slot_for_player(driver, player, bench)
@@ -542,6 +570,7 @@ def _place_player(driver, player, bench=False):
     # no longer changes the lineup in the current UI.
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", target)
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
+    _install_drag_probe(driver)
     drag_styles = _enable_drag_pointer_passthrough(driver)
     try:
         # Separate press and release into distinct W3C action sequences.
@@ -571,7 +600,8 @@ def _place_player(driver, player, bench=False):
           return {card: rect(arguments[0]), target: rect(arguments[1]),
             drawer: rect(document.querySelector('.ant-drawer-open')),
             maskPointerEvents: masks.map(mask => getComputedStyle(mask).pointerEvents),
-            mouse: window.__dragProbe?.slice(-4) || []};
+            events: window.__fantasquadDragEvents?.slice(-30) || [],
+            fixtureMouse: window.__dragProbe?.slice(-4) || []};
         """, card, target)
         drag_styles = _enable_drag_pointer_passthrough(driver)
         try:
