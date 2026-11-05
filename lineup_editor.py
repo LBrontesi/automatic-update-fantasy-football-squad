@@ -494,6 +494,41 @@ def _empty_slot_for_player(driver, player, bench):
     )
 
 
+def _enable_drag_pointer_passthrough(driver):
+    return driver.execute_script("""
+      const masks = [...document.querySelectorAll('.ant-drawer-mask')];
+      const drawers = [...document.querySelectorAll('.ant-drawer-open')];
+      const surfaces = drawers.flatMap(drawer => [...drawer.querySelectorAll(
+        '.ant-drawer-content-wrapper, .ant-drawer-content, .ant-drawer-body, ui-player-card'
+      )]);
+      const saved = {
+        masks: masks.map(el => el.style.pointerEvents),
+        drawers: drawers.map(el => el.style.pointerEvents),
+        surfaces: surfaces.map(el => el.style.pointerEvents)
+      };
+      masks.forEach(el => el.style.pointerEvents = 'none');
+      drawers.forEach(el => el.style.pointerEvents = 'none');
+      surfaces.forEach(el => el.style.pointerEvents = 'auto');
+      return saved;
+    """)
+
+
+def _restore_drag_pointer_events(driver, saved):
+    driver.execute_script("""
+      const masks = [...document.querySelectorAll('.ant-drawer-mask')];
+      const drawers = [...document.querySelectorAll('.ant-drawer-open')];
+      const surfaces = drawers.flatMap(drawer => [...drawer.querySelectorAll(
+        '.ant-drawer-content-wrapper, .ant-drawer-content, .ant-drawer-body, ui-player-card'
+      )]);
+      [masks, drawers, surfaces].forEach((elements, group) => {
+        const styles = [arguments[0].masks, arguments[0].drawers, arguments[0].surfaces][group];
+        elements.forEach((el, index) => {
+          if (index < styles.length) el.style.pointerEvents = styles[index];
+        });
+      });
+    """, saved)
+
+
 def _place_player(driver, player, bench=False):
     card = _find_card(driver, player)
     target = _empty_slot_for_player(driver, player, bench)
@@ -507,12 +542,7 @@ def _place_player(driver, player, bench=False):
     # no longer changes the lineup in the current UI.
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", target)
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
-    mask_styles = driver.execute_script("""
-      const masks = [...document.querySelectorAll('.ant-drawer-mask')];
-      const styles = masks.map(mask => mask.style.pointerEvents);
-      masks.forEach(mask => mask.style.pointerEvents = 'none');
-      return styles;
-    """)
+    drag_styles = _enable_drag_pointer_passthrough(driver)
     try:
         # Separate press and release into distinct W3C action sequences.
         # Chrome can leave a combined chain held after repeated CDK drags.
@@ -523,12 +553,7 @@ def _place_player(driver, player, bench=False):
             ActionChains(driver).release().perform()
         except WebDriverException:
             pass
-        driver.execute_script("""
-          const masks = [...document.querySelectorAll('.ant-drawer-mask')];
-          arguments[0].forEach((style, index) => {
-            if (masks[index]) masks[index].style.pointerEvents = style;
-          });
-        """, mask_styles)
+        _restore_drag_pointer_events(driver, drag_styles)
     try:
         WebDriverWait(driver, 5, ignored_exceptions=(StaleElementReferenceException,)).until(placed)
     except TimeoutException:
@@ -548,12 +573,7 @@ def _place_player(driver, player, bench=False):
             maskPointerEvents: masks.map(mask => getComputedStyle(mask).pointerEvents),
             mouse: window.__dragProbe?.slice(-4) || []};
         """, card, target)
-        mask_styles = driver.execute_script("""
-          const masks = [...document.querySelectorAll('.ant-drawer-mask')];
-          const styles = masks.map(mask => mask.style.pointerEvents);
-          masks.forEach(mask => mask.style.pointerEvents = 'none');
-          return styles;
-        """)
+        drag_styles = _enable_drag_pointer_passthrough(driver)
         try:
             ActionChains(driver).move_to_element(card).click_and_hold().pause(0.2).perform()
             ActionChains(driver).move_to_element(target).pause(0.2).release().perform()
@@ -562,12 +582,7 @@ def _place_player(driver, player, bench=False):
                 ActionChains(driver).release().perform()
             except WebDriverException:
                 pass
-            driver.execute_script("""
-              const masks = [...document.querySelectorAll('.ant-drawer-mask')];
-              arguments[0].forEach((style, index) => {
-                if (masks[index]) masks[index].style.pointerEvents = style;
-              });
-            """, mask_styles)
+            _restore_drag_pointer_events(driver, drag_styles)
         try:
             WebDriverWait(driver, 8, ignored_exceptions=(StaleElementReferenceException,)).until(placed)
         except TimeoutException as exc:
