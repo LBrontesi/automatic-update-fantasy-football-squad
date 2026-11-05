@@ -574,6 +574,12 @@ def _restore_drop_zone(driver, saved):
 
 def _drag_with_chrome_input(driver, card, target):
     """Dispatch trusted mouse input at the measured source and slot centers."""
+    driver.execute_script("""
+      if (!window.__fantasquadCancelNativeDrag) {
+        window.__fantasquadCancelNativeDrag = event => event.preventDefault();
+        window.addEventListener('dragstart', window.__fantasquadCancelNativeDrag, true);
+      }
+    """)
     points = driver.execute_script("""
       const center = el => {
         const r = el.getBoundingClientRect();
