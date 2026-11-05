@@ -1,4 +1,5 @@
 {
+  "league_aliases": {},
   "models": {},
   "pending": {
     "league_1": {
@@ -48,5 +49,7 @@
       }
     }
   },
-  "version": 1
+  "player_models": {},
+  "reviews": {},
+  "version": 2
 }
