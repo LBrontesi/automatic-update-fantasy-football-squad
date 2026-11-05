@@ -5,7 +5,7 @@ import json
 import pytest
 
 from feedback_data import (parse_history, fantasy_score, parse_calculated_match,
-                           collect_roster_results)
+                           collect_roster_results, captured_json)
 from learning import (empty_state, record_pending, apply_roster_outcome, adjust_scores,
                       load_state, bind_league)
 from player_data import ExtractionError
@@ -41,7 +41,8 @@ def outcome(roster, real_week=10):
     actual['34'].update(score=9, goals=1, used_substitute=True)
     actual['36'].update(score=12, goals=2)  # outside the seven reserves
     actual['27'].update(score=9, goals=1)   # excluded midfielder
-    return actual, {'submitted_at': SAVED_AT, 'real_matchweek': real_week}
+    return actual, {'submitted_at': SAVED_AT, 'real_matchweek': real_week,
+                    'submitted_starter_ids': [p.external_id for p in decision()[1].starters]}
 
 
 def test_snapshot_remembers_every_player_and_their_selection_group():
@@ -130,7 +131,7 @@ def test_too_few_rated_players_defers_hindsight_comparison_without_inventing_vot
     assert review['hindsight_gap'] is None
 
 
-@pytest.mark.parametrize('problem', ['missing', 'timestamp', 'nan'])
+@pytest.mark.parametrize('problem', ['missing', 'timestamp', 'nan', 'manual_swap'])
 def test_unreliable_results_cannot_change_the_model(problem):
     state = empty_state()
     roster, _, _ = snapshot(state)
@@ -139,8 +140,11 @@ def test_unreliable_results_cannot_change_the_model(problem):
         del actual['36']
     elif problem == 'timestamp':
         match['submitted_at'] += timedelta(hours=1)
-    else:
+    elif problem == 'nan':
         actual['36']['score'] = float('nan')
+    else:
+        match['submitted_starter_ids'].remove(31)
+        match['submitted_starter_ids'].append(34)
     before = deepcopy(state)
     assert not apply_roster_outcome(state, 'league', 8, actual, match)[0]
     assert state == before
@@ -218,6 +222,25 @@ def test_admin_results_need_a_calculated_competition_to_serie_a_mapping():
     assert parse_calculated_match(sides, 42, 8, set(range(1, 19)), calendar=mapping)['real_matchweek'] == 10
     with pytest.raises(ExtractionError):
         parse_calculated_match(sides, 42, 8, set(range(1, 19)), calendar=[])
+
+
+def test_wrapped_array_responses_are_unwrapped_without_reading_auth_headers():
+    class Driver:
+        def execute_cdp_cmd(self, method, params):
+            return {'body': json.dumps({'success': True, 'data': [{'matchDay': 8}]})}
+    messages = [{'method': 'Network.responseReceived', 'params': {'requestId': '1',
+                 'response': {'url': 'https://apileague.fantacalcio.it/api/league/calendar/42', 'status': 200}}}]
+    assert captured_json(Driver(), messages, lambda path: path.endswith('/42')) == [[{'matchDay': 8}]]
+
+
+def test_substitution_flags_reconstruct_the_original_starting_xi():
+    payload = match_payload()
+    outgoing = payload['home']['starts'][0]
+    incoming = payload['home']['bench'][0]
+    outgoing['ptype'], incoming['ptype'] = 'U', 'E'
+    payload['home']['starts'][0], payload['home']['bench'][0] = incoming, outgoing
+    match = parse_calculated_match(payload, 42, 8, set(range(1, 19)))
+    assert match['submitted_starter_ids'] == list(range(1, 12))
 
 
 def test_collection_cross_checks_official_scores_and_rejects_season_mismatch():

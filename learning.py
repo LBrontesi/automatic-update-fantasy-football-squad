@@ -131,6 +131,8 @@ def record_pending(
             raise ValueError('Submitted squad does not match the roster snapshot')
         pending_record.update(
             roster=records, formation=picked.formation,
+            starter_ids=[p.external_id for p in picked.starters],
+            bench_ids=[p.external_id for p in picked.bench],
             allowed_formations=list(allowed_formations or [picked.formation]),
             bench_roles=list(bench_roles or []), context=json.loads(json.dumps(context, allow_nan=False)),
         )
@@ -251,6 +253,18 @@ def adjust_scores(state: dict, league_key: str, players, scores: dict[str, float
     return adjusted
 
 
+def submission_error(pending, match):
+    saved_at = datetime.fromisoformat(pending['saved_at'])
+    if saved_at.tzinfo is None or match['submitted_at'].tzinfo is None:
+        return 'submission timestamp has no timezone'
+    if abs((saved_at - match['submitted_at']).total_seconds()) > 600:
+        return 'submitted lineup timestamp differs from the saved decision'
+    expected_ids = {int(pid) for pid, p in pending['roster'].items() if p['group'] == 'starter'}
+    if expected_ids != set(match.get('submitted_starter_ids', [])):
+        return 'submitted starting XI differs from the saved decision'
+    return None
+
+
 def apply_roster_outcome(state, league_key, round_number, actual, match):
     """Review all owned players, then learn once from a complete matched round."""
     from squad_picker import Player, pick_squad, FormationError
@@ -258,11 +272,9 @@ def apply_roster_outcome(state, league_key, round_number, actual, match):
     pending = state['pending'].get(league_key, {}).get(key)
     if not pending or 'roster' not in pending:
         return False, 'no whole-roster snapshot for this round'
-    saved_at = datetime.fromisoformat(pending['saved_at'])
-    if saved_at.tzinfo is None or match['submitted_at'].tzinfo is None:
-        return False, 'submission timestamp has no timezone'
-    if abs((saved_at - match['submitted_at']).total_seconds()) > 600:
-        return False, 'submitted lineup timestamp differs from the saved decision'
+    error = submission_error(pending, match)
+    if error:
+        return False, error
     roster = pending['roster']
     if set(actual) != set(roster):
         return False, 'whole-roster result coverage is incomplete'

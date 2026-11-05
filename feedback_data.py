@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import WebDriverException, TimeoutException
 
 from player_data import ExtractionError, WAIT_TIMEOUT, _performance_messages
 
@@ -49,7 +49,7 @@ def captured_json(driver, messages, predicate):
         try:
             body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': params['requestId']})
             payload = json.loads(body['body'])
-            if isinstance(payload, dict) and isinstance(payload.get('data'), dict):
+            if isinstance(payload, dict) and isinstance(payload.get('data'), (dict, list)):
                 payload = payload['data']
             results.append(payload)
         except (KeyError, ValueError, WebDriverException):
@@ -186,23 +186,27 @@ def parse_calculated_match(payload, competition_id, round_number, selected_ids, 
     else:
         raise ExtractionError('Unsupported calculated match payload')
     candidates = []
+    side_shapes = []
     for side in sides:
         if not isinstance(side, dict):
             continue
         entries = side.get('starts', []) + side.get('bench', [])
+        side_shapes.append({'keys': sorted(side), 'starters': len(side.get('starts', [])),
+                            'reserves': len(side.get('bench', []))})
         if len(side.get('starts', [])) == 11 and all(isinstance(entry, dict) for entry in entries):
             ids = [int(entry['pid']) for entry in entries]
             matches = set(ids) == set(selected_ids) if selected_ids is not None else len(set(ids) & set(owned_ids or [])) >= 3
             if len(ids) == len(set(ids)) and matches:
                 candidates.append((side, entries))
     if len(candidates) != 1:
-        raise ExtractionError('Calculated squad does not uniquely match the bot submission')
+        raise ExtractionError(f'Calculated squad does not uniquely match the bot submission; sides={side_shapes}')
     side, entries = candidates[0]
     try:
         submitted_at = datetime.strptime(str(side['ldate']), '%Y%m%d%H%M%S%f').replace(tzinfo=timezone.utc)
     except (ValueError, KeyError) as exc:
         raise ExtractionError('Calculated lineup has no valid submission timestamp') from exc
     players = {}
+    submitted_starters = {int(p['pid']) for p in side['starts']}
     for entry in entries:
         score = number(entry.get('cscr'))
         grade = number(entry.get('scr'))
@@ -214,9 +218,14 @@ def parse_calculated_match(payload, competition_id, round_number, selected_ids, 
         players[int(entry['pid'])] = {
             'score': score, 'used_substitute': 'e' in str(entry.get('ptype', '')).lower(),
         }
+        if 'e' in str(entry.get('ptype', '')).lower():
+            submitted_starters.discard(int(entry['pid']))
+        if 'u' in str(entry.get('ptype', '')).lower():
+            submitted_starters.add(int(entry['pid']))
     return {'real_matchweek': real_matchweek, 'submitted_at': submitted_at, 'players': players,
             'starter_ids': [int(p['pid']) for p in side['starts']],
-            'bench_ids': [int(p['pid']) for p in side['bench']]}
+            'bench_ids': [int(p['pid']) for p in side['bench']],
+            'submitted_starter_ids': sorted(submitted_starters)}
 
 
 def read_calculated_match(driver, url, round_number, selected_ids, owned_ids=None):
@@ -225,21 +234,38 @@ def read_calculated_match(driver, url, round_number, selected_ids, owned_ids=Non
     _performance_messages(driver)
     driver.get(f'{competition_base_url(url)}/round/{round_number}')
     messages = []
+    errors = []
+    shapes = []
+    observed_paths = set()
     def ready(d):
         messages.extend(_performance_messages(d))
+        for message in messages:
+            if message.get('method') == 'Network.responseReceived':
+                response = message.get('params', {}).get('response', {})
+                parsed = urlparse(response.get('url', ''))
+                if parsed.hostname == 'apileague.fantacalcio.it' and any(s in parsed.path.lower() for s in ('lineup', 'calendar')):
+                    observed_paths.add(re.sub(r'\d+', '#', parsed.path))
         calendars = captured_json(d, messages, lambda path:
             path.endswith(f'/league/competition/calendar/{competition_id}'))
         payloads = captured_json(d, messages, lambda path:
             re.search(rf'/teamLineup/{competition_id}/{round_number}/', path, re.I) is not None)
         for payload in payloads:
+            shape = ({'keys': sorted(payload), 'round': payload.get('mday'), 'real_round': payload.get('cmday'),
+                      'calculated': payload.get('cal')} if isinstance(payload, dict) else type(payload).__name__)
+            if shape not in shapes:
+                shapes.append(shape)
             try:
                 return parse_calculated_match(payload, competition_id, round_number, selected_ids, owned_ids,
                                               calendars[-1] if calendars else None)
-            except ExtractionError:
+            except (ExtractionError, ValueError, TypeError, KeyError) as exc:
+                if str(exc) not in errors:
+                    errors.append(str(exc))
                 continue
         return False
-    return WebDriverWait(driver, WAIT_TIMEOUT).until(ready,
-        'No calculated match response matching the saved squad was received')
+    try:
+        return WebDriverWait(driver, WAIT_TIMEOUT).until(ready)
+    except TimeoutException as exc:
+        raise ExtractionError(f'No matching calculated result; paths={sorted(observed_paths)}; response shapes={shapes}; errors={errors}') from exc
 
 
 def collect_roster_results(pending, match, history_fetcher=fetch_history):

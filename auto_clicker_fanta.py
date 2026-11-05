@@ -32,6 +32,7 @@ from learning import (
     pending_rounds,
     record_pending,
     role_adjustment,
+    submission_error,
     save_state,
 )
 from feedback_data import capture_settings, fetch_history, read_calculated_match, collect_roster_results
@@ -205,6 +206,9 @@ def handle_league(
                         raise RuntimeError('Saved and current league seasons do not match')
                     selected_ids = [int(pid) for pid, p in pending['roster'].items() if p['group'] != 'excluded']
                     match = read_calculated_match(driver, url, round_number, selected_ids)
+                    error = submission_error(pending, match)
+                    if error:
+                        raise RuntimeError(error)
                     actual = collect_roster_results(pending, match)
                     applied, reason = apply_roster_outcome(learning_state, learning_key, round_number, actual, match)
                 else:

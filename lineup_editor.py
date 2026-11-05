@@ -75,11 +75,7 @@ def read_competition_rounds(driver, url, debug_dir=None):
         body = _wait(
             driver,
             lambda d: (element := d.find_element(By.TAG_NAME, "body"))
-            if re.search(
-                r"(?:Prossima giornata|Giornata in corso)",
-                d.find_element(By.TAG_NAME, "body").text,
-                re.IGNORECASE,
-            ) else False,
+            if parse_competition_rounds(d.find_element(By.TAG_NAME, "body").text)[0] is not None else False,
             "Competition dashboard did not show its matchday status",
         )
     except LineupUIError:
