@@ -531,14 +531,14 @@ def _restore_drag_pointer_events(driver, saved):
 
 def _install_drag_probe(driver):
     driver.execute_script("""
-      if (window.__fantasquadDragEvents) return;
-      window.__fantasquadDragEvents = [];
+      if (window.__fantasquadDragProbe?.installed) return;
+      window.__fantasquadDragProbe = {installed:true, href:location.href, events:[]};
       const summarize = el => el && ({tag: el.tagName, id: el.id || '',
         className: typeof el.className === 'string' ? el.className : ''});
       for (const type of ['pointerdown','mousedown','pointermove','mousemove',
                           'pointerup','mouseup','dragstart','drop','dragend']) {
-        document.addEventListener(type, event => {
-          if (window.__fantasquadDragEvents.length >= 160) return;
+        window.addEventListener(type, event => {
+          if (window.__fantasquadDragProbe.events.length >= 160) return;
           if ((type === 'pointermove' || type === 'mousemove') && !event.buttons) return;
           const x = event.clientX || 0, y = event.clientY || 0;
           const zones = [...document.querySelectorAll('.cdk-drop-list')].filter(el => {
@@ -549,7 +549,7 @@ def _install_drag_probe(driver):
             return {id:el.id, className:el.className, x:Math.round(r.left),
               y:Math.round(r.top), width:Math.round(r.width), height:Math.round(r.height)};
           });
-          window.__fantasquadDragEvents.push({type, x, y, buttons:event.buttons,
+          window.__fantasquadDragProbe.events.push({type, x, y, buttons:event.buttons,
             target:summarize(event.target), hit:summarize(document.elementFromPoint(x,y)),
             zones, defaultPrevented:event.defaultPrevented});
         }, true);
@@ -597,10 +597,18 @@ def _place_player(driver, player, bench=False):
               hit: document.elementFromPoint(x, y)?.tagName || null};
           };
           const masks = [...document.querySelectorAll('.ant-drawer-mask')];
+          const zones = [...document.querySelectorAll('.cdk-drop-list')].map(el => {
+            const r = el.getBoundingClientRect();
+            return {id:el.id, className:el.className, x:Math.round(r.left),
+              y:Math.round(r.top), width:Math.round(r.width), height:Math.round(r.height)};
+          });
           return {card: rect(arguments[0]), target: rect(arguments[1]),
             drawer: rect(document.querySelector('.ant-drawer-open')),
             maskPointerEvents: masks.map(mask => getComputedStyle(mask).pointerEvents),
-            events: window.__fantasquadDragEvents?.slice(-30) || [],
+            probeInstalled: window.__fantasquadDragProbe?.installed || false,
+            probeHref: window.__fantasquadDragProbe?.href || '',
+            zones,
+            events: window.__fantasquadDragProbe?.events.slice(-30) || [],
             fixtureMouse: window.__dragProbe?.slice(-4) || []};
         """, card, target)
         drag_styles = _enable_drag_pointer_passthrough(driver)
