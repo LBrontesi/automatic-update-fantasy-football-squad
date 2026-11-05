@@ -80,23 +80,23 @@ el('options').onclick=e=>{
   state.formation=e.target.textContent;el('options').hidden=true;drawSlots();
 };
 el('clear').onclick=()=>{state.slots={};drawSlots();};
-let draggedPlayerId=null;
-window.__dragProbe=[];
-document.addEventListener('mousedown',e=>{
-  const card=e.target.closest('ui-player-card');
-  if(card)draggedPlayerId=Number(card.querySelector('nz-card').dataset.id);
-  window.__dragProbe.push({type:'down',id:draggedPlayerId,x:e.clientX,y:e.clientY,
-    hit:document.elementFromPoint(e.clientX,e.clientY)?.tagName||null});
-});
-document.addEventListener('mouseup',e=>{
+// The real editor requires a selected slot before a roster click assigns a
+// player. A roster click on its own must not change the lineup.
+let selectedSlot=null;
+document.addEventListener('click',e=>{
   const slot=e.target.closest('ui-lineup-slot');
-  const player=players.find(p=>p.id===draggedPlayerId);
-  window.__dragProbe.push({type:'up',id:draggedPlayerId,slot:slot?.dataset.lineupSlot||null,
-    x:e.clientX,y:e.clientY,hit:document.elementFromPoint(e.clientX,e.clientY)?.tagName||null});
-  if(slot && player && !Object.values(state.slots).includes(player.name)){
-    state.slots[slot.dataset.lineupSlot]=player.name;drawSlots();
+  if(slot){
+    selectedSlot=selectedSlot===slot.dataset.lineupSlot?null:slot.dataset.lineupSlot;
+    if(selectedSlot!==null)el('roster').click();
+    return;
   }
-  draggedPlayerId=null;
+  const card=e.target.closest('ui-player-card');
+  if(!card || selectedSlot===null)return;
+  const player=players.find(p=>p.id===Number(card.querySelector('nz-card').dataset.id));
+  if(player && !Object.values(state.slots).includes(player.name)){
+    state.slots[selectedSlot]=player.name;
+    selectedSlot=null;drawSlots();
+  }
 });
 el('save').onclick=()=>{
   if(!location.search.includes('ignore_save'))localStorage.setItem(location.pathname,JSON.stringify(state));

@@ -120,7 +120,7 @@ The update job uploads learning state as a short-lived artifact. A separate `per
 
 ## Current limitations
 
-- The live path uses the current Angular lineup UI: it selects the configured formation, double-clicks the recommended players into the first valid slots, assigns captain and vice-captain, and saves the formation. If Fantacalcio changes the UI again, the run fails safely and saves an HTML snapshot under `debug/`.
+- The live path uses the current Angular lineup UI: it selects the configured formation, selects each compatible empty slot and clicks its recommended player, assigns captain and vice-captain when enabled, and saves the formation. Each placement is checked by player ID, and the saved XI, reserve order, formation and captaincy are verified after reload. If the UI changes, the run fails safely and saves an HTML snapshot under `debug/`.
 - Legacy URLs in the form `.../area-gioco/inserisci-formazione?id=...` are converted automatically to the current `.../view/competition/<id>/lineup` route.
 - `home` advantage is only applied when the league pages expose the venue; `opponent` weakness only when standings/results are extractable.
 - The active editor is `lineup_editor.py`; `player_data.py` also retains legacy parsing helpers. The browser tests model observed DOM contracts and cannot guarantee future site compatibility. A successful locked-matchday dry run does not validate a live submission; look for **saved** with a verified reload.

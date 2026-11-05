@@ -8,7 +8,6 @@ from __future__ import annotations
 import logging
 import math
 import re
-import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -494,237 +493,29 @@ def _empty_slot_for_player(driver, player, bench):
     )
 
 
-def _enable_drag_pointer_passthrough(driver):
-    return driver.execute_script("""
-      const masks = [...document.querySelectorAll('.ant-drawer-mask')];
-      const drawers = [...document.querySelectorAll('.ant-drawer-open')];
-      const surfaces = drawers.flatMap(drawer => [...drawer.querySelectorAll(
-        '.ant-drawer-content-wrapper, .ant-drawer-content, .ant-drawer-body, ui-player-card'
-      )]);
-      const saved = {
-        masks: masks.map(el => el.style.pointerEvents),
-        drawers: drawers.map(el => el.style.pointerEvents),
-        surfaces: surfaces.map(el => el.style.pointerEvents)
-      };
-      masks.forEach(el => el.style.pointerEvents = 'none');
-      drawers.forEach(el => el.style.pointerEvents = 'none');
-      surfaces.forEach(el => el.style.pointerEvents = 'auto');
-      return saved;
-    """)
-
-
-def _restore_drag_pointer_events(driver, saved):
-    driver.execute_script("""
-      const masks = [...document.querySelectorAll('.ant-drawer-mask')];
-      const drawers = [...document.querySelectorAll('.ant-drawer-open')];
-      const surfaces = drawers.flatMap(drawer => [...drawer.querySelectorAll(
-        '.ant-drawer-content-wrapper, .ant-drawer-content, .ant-drawer-body, ui-player-card'
-      )]);
-      [masks, drawers, surfaces].forEach((elements, group) => {
-        const styles = [arguments[0].masks, arguments[0].drawers, arguments[0].surfaces][group];
-        elements.forEach((el, index) => {
-          if (index < styles.length) el.style.pointerEvents = styles[index];
-        });
-      });
-    """, saved)
-
-
-def _prepare_drop_zone(driver, target):
-    """Give zero-height lineup rows a CDK hit area without moving their slots."""
-    return driver.execute_script("""
-      const zone = arguments[0].closest('.cdk-drop-list');
-      if (!zone) return null;
-      const zoneRect = zone.getBoundingClientRect();
-      const targetRect = arguments[0].getBoundingClientRect();
-      if (zoneRect.height >= targetRect.height * 0.75) return null;
-
-      const originalStyle = zone.getAttribute('style');
-      // The live lineup uses h-0 drop lists to position visible slots. CDK
-      // still tests the drop against the list rectangle, so make that rectangle
-      // cover the slots for the duration of this drag while keeping their
-      // current centers fixed.
-      for (const [name, value] of Object.entries({
-        position: 'fixed', left: `${zoneRect.left}px`, top: `${targetRect.top}px`,
-        width: `${zoneRect.width}px`, minWidth: `${zoneRect.width}px`,
-        maxWidth: `${zoneRect.width}px`, height: `${targetRect.height}px`,
-        transform: 'none', margin: '0', zIndex: '1001', pointerEvents: 'auto'
-      })) zone.style.setProperty(name, value, 'important');
-
-      const updatedZone = zone.getBoundingClientRect();
-      const updatedTarget = arguments[0].getBoundingClientRect();
-      return {
-        id: zone.id,
-        originalStyle,
-        before: {x: zoneRect.x, y: zoneRect.y, width: zoneRect.width, height: zoneRect.height},
-        after: {x: updatedZone.x, y: updatedZone.y, width: updatedZone.width, height: updatedZone.height},
-        targetBefore: {x: targetRect.x, y: targetRect.y, width: targetRect.width, height: targetRect.height},
-        targetAfter: {x: updatedTarget.x, y: updatedTarget.y, width: updatedTarget.width, height: updatedTarget.height}
-      };
-    """, target)
-
-
-def _restore_drop_zone(driver, saved):
-    if saved:
-        driver.execute_script("""
-          const zone = document.getElementById(arguments[0].id);
-          if (!zone) return;
-          if (arguments[0].originalStyle === null) zone.removeAttribute('style');
-          else zone.setAttribute('style', arguments[0].originalStyle);
-        """, saved)
-
-
-def _drag_with_chrome_input(driver, card, target):
-    """Dispatch trusted mouse input at the measured source and slot centers."""
-    driver.execute_script("""
-      if (!window.__fantasquadCancelNativeDrag) {
-        window.__fantasquadCancelNativeDrag = event => event.preventDefault();
-        window.addEventListener('dragstart', window.__fantasquadCancelNativeDrag, true);
-      }
-    """)
-    points = driver.execute_script("""
-      const center = el => {
-        const r = el.getBoundingClientRect();
-        return {x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};
-      };
-      return {source:center(arguments[0]), target:center(arguments[1])};
-    """, card, target)
-    source, destination = points["source"], points["target"]
-
-    def dispatch(event_type, point, *, pressed=False):
-        driver.execute_cdp_cmd("Input.dispatchMouseEvent", {
-            "type": event_type,
-            "x": point["x"],
-            "y": point["y"],
-            "button": "left" if event_type in ("mousePressed", "mouseReleased") or pressed else "none",
-            "buttons": 1 if pressed else 0,
-            **({"clickCount": 1} if event_type == "mousePressed" else {}),
-        })
-
-    dispatch("mouseMoved", source)
-    dispatch("mousePressed", source, pressed=True)
-    time.sleep(0.08)
-    steps = 8
-    for index in range(1, steps + 1):
-        fraction = index / steps
-        point = {
-            "x": round(source["x"] + (destination["x"] - source["x"]) * fraction),
-            "y": round(source["y"] + (destination["y"] - source["y"]) * fraction),
-        }
-        dispatch("mouseMoved", point, pressed=True)
-        time.sleep(0.025)
-    dispatch("mouseReleased", destination)
-
-
-def _install_drag_probe(driver):
-    driver.execute_script("""
-      if (window.__fantasquadDragProbe?.installed) {
-        window.__fantasquadDragProbe.events = [];
-        return;
-      }
-      window.__fantasquadDragProbe = {installed:true, href:location.href, events:[]};
-      const summarize = el => el && ({tag: el.tagName, id: el.id || '',
-        className: typeof el.className === 'string' ? el.className : ''});
-      for (const type of ['pointerdown','mousedown','pointermove','mousemove',
-                          'pointerup','mouseup','dragstart','drop','dragend']) {
-        window.addEventListener(type, event => {
-          if (window.__fantasquadDragProbe.events.length >= 160) return;
-          if ((type === 'pointermove' || type === 'mousemove') && !event.buttons) return;
-          const x = event.clientX || 0, y = event.clientY || 0;
-          const zones = [...document.querySelectorAll('.cdk-drop-list')].filter(el => {
-            const r = el.getBoundingClientRect();
-            return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-          }).map(el => {
-            const r = el.getBoundingClientRect();
-            return {id:el.id, className:el.className, x:Math.round(r.left),
-              y:Math.round(r.top), width:Math.round(r.width), height:Math.round(r.height)};
-          });
-          window.__fantasquadDragProbe.events.push({type, x, y, buttons:event.buttons,
-            target:summarize(event.target), hit:summarize(document.elementFromPoint(x,y)),
-            zones, defaultPrevented:event.defaultPrevented});
-        }, true);
-      }
-    """)
-
-
 def _place_player(driver, player, bench=False):
-    card = _find_card(driver, player)
+    # The editor's click handler assigns a roster player to selectedSlot.
+    # Select the exact compatible slot first so reserve order is preserved.
+    close_roster(driver)
     target = _empty_slot_for_player(driver, player, bench)
     target_marker = target.get_attribute("data-lineup-slot")
-
-    def placed(d):
-        return read_lineup(d)["slot_ids"].get(target_marker) == player.external_id
-
-    # Fantacalcio renders roster cards and lineup slots as CDK drag items.
-    # Drag the player into a compatible empty slot; double-clicking the card
-    # no longer changes the lineup in the current UI.
-    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", target)
-    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
-    _install_drag_probe(driver)
-    drag_styles = _enable_drag_pointer_passthrough(driver)
-    drop_zone = _prepare_drop_zone(driver, target)
-    try:
-        _drag_with_chrome_input(driver, card, target)
-    finally:
-        try:
-            _restore_drop_zone(driver, drop_zone)
-        finally:
-            _restore_drag_pointer_events(driver, drag_styles)
-    try:
-        WebDriverWait(driver, 5, ignored_exceptions=(StaleElementReferenceException,)).until(placed)
-    except TimeoutException:
-        # Retry with a fresh source and target, then verify the provider ID.
-        card = _find_card(driver, player)
-        target = driver.find_element(By.CSS_SELECTOR, f"{SLOTS}[data-lineup-slot='{target_marker}']")
-        diagnostic = driver.execute_script("""
-          const rect = el => {
-            const r = el.getBoundingClientRect();
-            const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);
-            return {x, y, width: Math.round(r.width), height: Math.round(r.height),
-              hit: document.elementFromPoint(x, y)?.tagName || null};
-          };
-          const masks = [...document.querySelectorAll('.ant-drawer-mask')];
-          const zones = [...document.querySelectorAll('.cdk-drop-list')].map(el => {
-            const r = el.getBoundingClientRect();
-            return {id:el.id, className:el.className, x:Math.round(r.left),
-              y:Math.round(r.top), width:Math.round(r.width), height:Math.round(r.height)};
-          });
-          return {card: rect(arguments[0]), target: rect(arguments[1]),
-            drawer: rect(document.querySelector('.ant-drawer-open')),
-            maskPointerEvents: masks.map(mask => getComputedStyle(mask).pointerEvents),
-            probeInstalled: window.__fantasquadDragProbe?.installed || false,
-            probeHref: window.__fantasquadDragProbe?.href || '',
-            zones,
-            events: window.__fantasquadDragProbe?.events.slice(-30) || [],
-            fixtureMouse: window.__dragProbe?.slice(-4) || []};
-        """, card, target)
-        diagnostic["dropZoneDuringDrag"] = {
-            key: drop_zone.get(key)
-            for key in ("id", "before", "after", "targetBefore", "targetAfter")
-        } if drop_zone else None
-        drag_styles = _enable_drag_pointer_passthrough(driver)
-        drop_zone = _prepare_drop_zone(driver, target)
-        try:
-            _drag_with_chrome_input(driver, card, target)
-        finally:
-            try:
-                _restore_drop_zone(driver, drop_zone)
-            finally:
-                _restore_drag_pointer_events(driver, drag_styles)
-        try:
-            WebDriverWait(driver, 8, ignored_exceptions=(StaleElementReferenceException,)).until(placed)
-        except TimeoutException as exc:
-            raise LineupUIError(
-                f"Could not place {player.name} in {'reserves' if bench else 'starters'}; "
-                f"drag diagnostic: {diagnostic}"
-            ) from exc
+    driver.execute_script("arguments[0].click();", target)
+    card = _find_card(driver, player)
+    driver.execute_script("arguments[0].click();", card)
+    _wait(
+        driver,
+        lambda d: read_lineup(d)["slot_ids"].get(target_marker) == player.external_id,
+        f"Could not place {player.name} in selected "
+        f"{'reserve' if bench else 'starter'} slot {target_marker}",
+    )
 
 
 def _captain(driver, player, marker):
     close_roster(driver)
     slot = driver.find_element(By.CSS_SELECTOR, f"view-lineup [data-captain-slot='{marker}']")
-    _click(driver, slot)
+    driver.execute_script("arguments[0].click();", slot)
     card = _find_card(driver, player)
-    _click(driver, card)
+    driver.execute_script("arguments[0].click();", card)
     _wait(driver, lambda d: read_lineup(d)["captain_ids"].get(marker) == player.external_id,
           f"Could not set captain slot {marker}")
 
