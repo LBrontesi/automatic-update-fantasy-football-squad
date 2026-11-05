@@ -81,13 +81,18 @@ el('options').onclick=e=>{
 };
 el('clear').onclick=()=>{state.slots={};drawSlots();};
 let draggedPlayerId=null;
+window.__dragProbe=[];
 document.addEventListener('mousedown',e=>{
   const card=e.target.closest('ui-player-card');
   if(card)draggedPlayerId=Number(card.querySelector('nz-card').dataset.id);
+  window.__dragProbe.push({type:'down',id:draggedPlayerId,x:e.clientX,y:e.clientY,
+    hit:document.elementFromPoint(e.clientX,e.clientY)?.tagName||null});
 });
 document.addEventListener('mouseup',e=>{
   const slot=e.target.closest('ui-lineup-slot');
   const player=players.find(p=>p.id===draggedPlayerId);
+  window.__dragProbe.push({type:'up',id:draggedPlayerId,slot:slot?.dataset.lineupSlot||null,
+    x:e.clientX,y:e.clientY,hit:document.elementFromPoint(e.clientX,e.clientY)?.tagName||null});
   if(slot && player && !Object.values(state.slots).includes(player.name)){
     state.slots[slot.dataset.lineupSlot]=player.name;drawSlots();
   }

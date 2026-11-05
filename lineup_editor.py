@@ -531,8 +531,41 @@ def _place_player(driver, player, bench=False):
         # pointer sequence, then verify the provider ID in the intended slot.
         card = _find_card(driver, player)
         target = driver.find_element(By.CSS_SELECTOR, f"{SLOTS}[data-lineup-slot='{target_marker}']")
-        ActionChains(driver).drag_and_drop(card, target).perform()
-        _wait(driver, placed, f"Could not place {player.name} in {'reserves' if bench else 'starters'}")
+        diagnostic = driver.execute_script("""
+          const rect = el => {
+            const r = el.getBoundingClientRect();
+            const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);
+            return {x, y, width: Math.round(r.width), height: Math.round(r.height),
+              hit: document.elementFromPoint(x, y)?.tagName || null};
+          };
+          const masks = [...document.querySelectorAll('.ant-drawer-mask')];
+          return {card: rect(arguments[0]), target: rect(arguments[1]),
+            drawer: rect(document.querySelector('.ant-drawer-open')),
+            maskPointerEvents: masks.map(mask => getComputedStyle(mask).pointerEvents),
+            mouse: window.__dragProbe?.slice(-4) || []};
+        """, card, target)
+        mask_styles = driver.execute_script("""
+          const masks = [...document.querySelectorAll('.ant-drawer-mask')];
+          const styles = masks.map(mask => mask.style.pointerEvents);
+          masks.forEach(mask => mask.style.pointerEvents = 'none');
+          return styles;
+        """)
+        try:
+            ActionChains(driver).drag_and_drop(card, target).perform()
+        finally:
+            driver.execute_script("""
+              const masks = [...document.querySelectorAll('.ant-drawer-mask')];
+              arguments[0].forEach((style, index) => {
+                if (masks[index]) masks[index].style.pointerEvents = style;
+              });
+            """, mask_styles)
+        try:
+            WebDriverWait(driver, 8, ignored_exceptions=(StaleElementReferenceException,)).until(placed)
+        except TimeoutException as exc:
+            raise LineupUIError(
+                f"Could not place {player.name} in {'reserves' if bench else 'starters'}; "
+                f"drag diagnostic: {diagnostic}"
+            ) from exc
 
 
 def _captain(driver, player, marker):
