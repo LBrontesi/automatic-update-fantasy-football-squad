@@ -282,12 +282,12 @@
             "score": 2.106
           },
           "6752": {
-            "expected_contribution": 5.22,
+            "expected_contribution": 4.64,
             "group": "bench",
             "name": "Woltemade",
             "role": "A",
             "scale": 0.4,
-            "score": 2.088
+            "score": 1.856
           },
           "6844": {
             "expected_contribution": 4.4,
@@ -354,7 +354,7 @@
             "score": 2.376
           }
         },
-        "saved_at": "2026-11-05T17:30:55.349418+00:00",
+        "saved_at": "2026-11-05T23:44:40.557451+00:00",
         "starter_ids": [
           610,
           2296,
@@ -719,7 +719,7 @@
             "score": 1.32
           }
         },
-        "saved_at": "2026-11-05T17:30:11.257704+00:00",
+        "saved_at": "2026-11-05T23:44:04.694653+00:00",
         "starter_ids": [
           133,
           6217,
