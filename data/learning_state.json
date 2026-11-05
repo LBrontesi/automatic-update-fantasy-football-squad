@@ -1,5 +1,52 @@
 {
   "models": {},
-  "pending": {},
+  "pending": {
+    "league_1": {
+      "9": {
+        "prediction_by_role": {
+          "A": {
+            "count": 3,
+            "score_sum": 7.488
+          },
+          "C": {
+            "count": 3,
+            "score_sum": 7.308
+          },
+          "D": {
+            "count": 4,
+            "score_sum": 8.46
+          },
+          "G": {
+            "count": 1,
+            "score_sum": 1.8
+          }
+        },
+        "saved_at": "2026-11-05T15:44:49.516914+00:00"
+      }
+    },
+    "league_2": {
+      "8": {
+        "prediction_by_role": {
+          "A": {
+            "count": 2,
+            "score_sum": 4.68
+          },
+          "C": {
+            "count": 5,
+            "score_sum": 12.238
+          },
+          "D": {
+            "count": 3,
+            "score_sum": 6.372
+          },
+          "G": {
+            "count": 1,
+            "score_sum": 1.1
+          }
+        },
+        "saved_at": "2026-11-05T15:45:38.758826+00:00"
+      }
+    }
+  },
   "version": 1
 }
