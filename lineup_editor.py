@@ -514,10 +514,15 @@ def _place_player(driver, player, bench=False):
       return styles;
     """)
     try:
-        ActionChains(driver).move_to_element(card).click_and_hold().pause(0.2).move_to_element(
-            target
-        ).pause(0.2).release().perform()
+        # Separate press and release into distinct W3C action sequences.
+        # Chrome can leave a combined chain held after repeated CDK drags.
+        ActionChains(driver).move_to_element(card).click_and_hold().pause(0.2).perform()
+        ActionChains(driver).move_to_element(target).pause(0.2).release().perform()
     finally:
+        try:
+            ActionChains(driver).release().perform()
+        except WebDriverException:
+            pass
         driver.execute_script("""
           const masks = [...document.querySelectorAll('.ant-drawer-mask')];
           arguments[0].forEach((style, index) => {
@@ -527,8 +532,7 @@ def _place_player(driver, player, bench=False):
     try:
         WebDriverWait(driver, 5, ignored_exceptions=(StaleElementReferenceException,)).until(placed)
     except TimeoutException:
-        # Try the WebDriver drag-and-drop helper as a second CDK-compatible
-        # pointer sequence, then verify the provider ID in the intended slot.
+        # Retry with a fresh source and target, then verify the provider ID.
         card = _find_card(driver, player)
         target = driver.find_element(By.CSS_SELECTOR, f"{SLOTS}[data-lineup-slot='{target_marker}']")
         diagnostic = driver.execute_script("""
@@ -551,8 +555,13 @@ def _place_player(driver, player, bench=False):
           return styles;
         """)
         try:
-            ActionChains(driver).drag_and_drop(card, target).perform()
+            ActionChains(driver).move_to_element(card).click_and_hold().pause(0.2).perform()
+            ActionChains(driver).move_to_element(target).pause(0.2).release().perform()
         finally:
+            try:
+                ActionChains(driver).release().perform()
+            except WebDriverException:
+                pass
             driver.execute_script("""
               const masks = [...document.querySelectorAll('.ant-drawer-mask')];
               arguments[0].forEach((style, index) => {
