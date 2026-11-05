@@ -228,23 +228,40 @@ def parse_calculated_match(payload, competition_id, round_number, selected_ids, 
             'submitted_starter_ids': sorted(submitted_starters)}
 
 
-def read_calculated_match(driver, url, round_number, selected_ids, owned_ids=None):
+def result_round_mapping(path, competition_id, round_number, calculated_through):
+    match = re.search(r'/teamLineup/(\d+)/(\d+)/(\d+)(?:/|$)', path, re.I)
+    if (not match or int(match[1]) != competition_id or int(match[2]) != round_number
+            or calculated_through is None or not 1 <= round_number <= calculated_through
+            or not 1 <= int(match[3]) <= 38):
+        return None
+    return [{'matchDay': round_number, 'championshipMatchDay': int(match[3]), 'calculated': True}]
+
+
+def read_calculated_match(driver, url, round_number, selected_ids, owned_ids=None, calculated_through=None):
     from lineup_editor import competition_base_url
     competition_id = int(competition_base_url(url).rsplit('/', 1)[1])
     _performance_messages(driver)
+    driver.execute_cdp_cmd('Network.enable', {'maxTotalBufferSize': 30_000_000, 'maxResourceBufferSize': 10_000_000})
+    driver.execute_cdp_cmd('Network.setCacheDisabled', {'cacheDisabled': True})
     driver.get(f'{competition_base_url(url)}/round/{round_number}')
     messages = []
     errors = []
     shapes = []
     observed_paths = set()
+    request_mapping = None
     def ready(d):
+        nonlocal request_mapping
         messages.extend(_performance_messages(d))
         for message in messages:
             if message.get('method') == 'Network.responseReceived':
                 response = message.get('params', {}).get('response', {})
                 parsed = urlparse(response.get('url', ''))
                 if parsed.hostname == 'apileague.fantacalcio.it' and any(s in parsed.path.lower() for s in ('lineup', 'calendar')):
-                    observed_paths.add(re.sub(r'\d+', '#', parsed.path))
+                    route = re.search(r'/teamLineup/\d+/\d+/\d+', parsed.path, re.I)
+                    observed_paths.add(route[0] if route else re.sub(r'\d+', '#', parsed.path))
+                    mapping = result_round_mapping(parsed.path, competition_id, round_number, calculated_through)
+                    if mapping:
+                        request_mapping = mapping
         calendars = captured_json(d, messages, lambda path:
             path.endswith(f'/league/competition/calendar/{competition_id}'))
         payloads = captured_json(d, messages, lambda path:
@@ -256,7 +273,7 @@ def read_calculated_match(driver, url, round_number, selected_ids, owned_ids=Non
                 shapes.append(shape)
             try:
                 return parse_calculated_match(payload, competition_id, round_number, selected_ids, owned_ids,
-                                              calendars[-1] if calendars else None)
+                                              request_mapping or (calendars[-1] if calendars else None))
             except (ExtractionError, ValueError, TypeError, KeyError) as exc:
                 if str(exc) not in errors:
                     errors.append(str(exc))
@@ -266,6 +283,8 @@ def read_calculated_match(driver, url, round_number, selected_ids, owned_ids=Non
         return WebDriverWait(driver, WAIT_TIMEOUT).until(ready)
     except TimeoutException as exc:
         raise ExtractionError(f'No matching calculated result; paths={sorted(observed_paths)}; response shapes={shapes}; errors={errors}') from exc
+    finally:
+        driver.execute_cdp_cmd('Network.setCacheDisabled', {'cacheDisabled': False})
 
 
 def collect_roster_results(pending, match, history_fetcher=fetch_history):

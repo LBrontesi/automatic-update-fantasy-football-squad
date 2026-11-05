@@ -185,7 +185,7 @@ def handle_league(
         if not context or latest_completed is None:
             raise RuntimeError('Cannot check feedback without scoring context and a completed round')
         match = read_calculated_match(driver, url, latest_completed, None,
-            [p.external_id for p in league.players])
+            [p.external_id for p in league.players], calculated_through=latest_completed)
         snapshot = {'context': context, 'roster': {str(p.external_id): {'role': p.role} for p in league.players}}
         checked = collect_roster_results(snapshot, match)
         result['feedback_source_check'] = {
@@ -205,7 +205,8 @@ def handle_league(
                     if not context or context['season_id'] != pending['context']['season_id']:
                         raise RuntimeError('Saved and current league seasons do not match')
                     selected_ids = [int(pid) for pid, p in pending['roster'].items() if p['group'] != 'excluded']
-                    match = read_calculated_match(driver, url, round_number, selected_ids)
+                    match = read_calculated_match(driver, url, round_number, selected_ids,
+                                                  calculated_through=latest_completed)
                     error = submission_error(pending, match)
                     if error:
                         raise RuntimeError(error)

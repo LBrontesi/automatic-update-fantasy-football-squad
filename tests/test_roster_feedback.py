@@ -5,7 +5,7 @@ import json
 import pytest
 
 from feedback_data import (parse_history, fantasy_score, parse_calculated_match,
-                           collect_roster_results, captured_json)
+                           collect_roster_results, captured_json, result_round_mapping)
 from learning import (empty_state, record_pending, apply_roster_outcome, adjust_scores,
                       load_state, bind_league)
 from player_data import ExtractionError
@@ -224,6 +224,16 @@ def test_admin_results_need_a_calculated_competition_to_serie_a_mapping():
         parse_calculated_match(sides, 42, 8, set(range(1, 19)), calendar=[])
 
 
+def test_observed_result_request_maps_only_the_requested_calculated_round():
+    path = '/gaming/v1/teamLineup/42/8/10'
+    assert result_round_mapping(path, 42, 8, 8) == [
+        {'matchDay': 8, 'championshipMatchDay': 10, 'calculated': True}]
+    assert result_round_mapping(path, 42, 8, 7) is None
+    assert result_round_mapping(path, 43, 8, 8) is None
+    assert result_round_mapping(path, 42, 7, 8) is None
+    assert result_round_mapping(path, 42, 8, None) is None
+
+
 def test_wrapped_array_responses_are_unwrapped_without_reading_auth_headers():
     class Driver:
         def execute_cdp_cmd(self, method, params):
@@ -309,7 +319,7 @@ def test_source_check_validates_all_players_without_saving_or_training(monkeypat
     from argparse import Namespace
     bot, league, cfg = orchestrated_league(monkeypatch)
     match = {'real_matchweek': 10, 'players': {p.external_id: {} for p in league.players[:18]}}
-    monkeypatch.setattr(bot, 'read_calculated_match', lambda *a: match)
+    monkeypatch.setattr(bot, 'read_calculated_match', lambda *a, **kw: match)
     monkeypatch.setattr(bot, 'collect_roster_results', lambda *_:
                         {str(p.external_id): {'score': 6} for p in league.players})
     monkeypatch.setattr(bot, 'apply_lineup', lambda *a, **kw: pytest.fail('source check saved a lineup'))
