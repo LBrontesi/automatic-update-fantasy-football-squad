@@ -545,7 +545,8 @@ def _prepare_drop_zone(driver, target):
       // current centers fixed.
       for (const [name, value] of Object.entries({
         position: 'fixed', left: `${zoneRect.left}px`, top: `${targetRect.top}px`,
-        width: `${zoneRect.width}px`, height: `${targetRect.height}px`,
+        width: `${zoneRect.width}px`, minWidth: `${zoneRect.width}px`,
+        maxWidth: `${zoneRect.width}px`, height: `${targetRect.height}px`,
         transform: 'none', margin: '0', zIndex: '1001', pointerEvents: 'auto'
       })) zone.style.setProperty(name, value, 'important');
 
