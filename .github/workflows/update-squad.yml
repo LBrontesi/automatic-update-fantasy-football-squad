@@ -78,6 +78,8 @@ jobs:
     timeout-minutes: 15
     needs: [schedule-guard, test]
     if: needs.schedule-guard.outputs.should_run == 'true'
+    outputs:
+      learning_artifact_id: ${{ steps.learning-state.outputs.artifact-id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -106,7 +108,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: squad-report-${{ github.run_id }}
+          name: squad-report-${{ github.run_id }}-${{ github.run_attempt }}
           path: reports/
           if-no-files-found: ignore
           retention-days: 14
@@ -115,16 +117,17 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: squad-debug-${{ github.run_id }}
+          name: squad-debug-${{ github.run_id }}-${{ github.run_attempt }}
           path: debug/
           if-no-files-found: ignore
           retention-days: 3
 
       - name: Upload persistent learning state
+        id: learning-state
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: learning-state-${{ github.run_id }}
+          name: learning-state-${{ github.run_id }}-${{ github.run_attempt }}
           path: data/learning_state.json
           if-no-files-found: ignore
           retention-days: 1
@@ -142,10 +145,11 @@ jobs:
       - name: Download learning state
         uses: actions/download-artifact@v4
         with:
-          name: learning-state-${{ github.run_id }}
+          artifact-ids: ${{ needs.update-squad.outputs.learning_artifact_id }}
+          merge-multiple: true
           path: _learning_state
 
-      - name: Persist only the aggregate model state
+      - name: Persist learning and decision history
         run: |
           cp _learning_state/learning_state.json data/learning_state.json
           git config user.name "github-actions[bot]"
