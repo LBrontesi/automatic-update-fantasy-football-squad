@@ -8,11 +8,11 @@ from __future__ import annotations
 import logging
 import math
 import re
+import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException, WebDriverException
-from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -572,6 +572,42 @@ def _restore_drop_zone(driver, saved):
         """, saved)
 
 
+def _drag_with_chrome_input(driver, card, target):
+    """Dispatch trusted mouse input at the measured source and slot centers."""
+    points = driver.execute_script("""
+      const center = el => {
+        const r = el.getBoundingClientRect();
+        return {x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};
+      };
+      return {source:center(arguments[0]), target:center(arguments[1])};
+    """, card, target)
+    source, destination = points["source"], points["target"]
+
+    def dispatch(event_type, point, *, pressed=False):
+        driver.execute_cdp_cmd("Input.dispatchMouseEvent", {
+            "type": event_type,
+            "x": point["x"],
+            "y": point["y"],
+            "button": "left" if event_type in ("mousePressed", "mouseReleased") or pressed else "none",
+            "buttons": 1 if pressed else 0,
+            **({"clickCount": 1} if event_type == "mousePressed" else {}),
+        })
+
+    dispatch("mouseMoved", source)
+    dispatch("mousePressed", source, pressed=True)
+    time.sleep(0.08)
+    steps = 8
+    for index in range(1, steps + 1):
+        fraction = index / steps
+        point = {
+            "x": round(source["x"] + (destination["x"] - source["x"]) * fraction),
+            "y": round(source["y"] + (destination["y"] - source["y"]) * fraction),
+        }
+        dispatch("mouseMoved", point, pressed=True)
+        time.sleep(0.025)
+    dispatch("mouseReleased", destination)
+
+
 def _install_drag_probe(driver):
     driver.execute_script("""
       if (window.__fantasquadDragProbe?.installed) {
@@ -620,15 +656,8 @@ def _place_player(driver, player, bench=False):
     drag_styles = _enable_drag_pointer_passthrough(driver)
     drop_zone = _prepare_drop_zone(driver, target)
     try:
-        # Separate press and release into distinct W3C action sequences.
-        # Chrome can leave a combined chain held after repeated CDK drags.
-        ActionChains(driver).move_to_element(card).click_and_hold().pause(0.2).perform()
-        ActionChains(driver).move_to_element(target).pause(0.2).release().perform()
+        _drag_with_chrome_input(driver, card, target)
     finally:
-        try:
-            ActionChains(driver).release().perform()
-        except WebDriverException:
-            pass
         try:
             _restore_drop_zone(driver, drop_zone)
         finally:
@@ -661,16 +690,15 @@ def _place_player(driver, player, bench=False):
             events: window.__fantasquadDragProbe?.events.slice(-30) || [],
             fixtureMouse: window.__dragProbe?.slice(-4) || []};
         """, card, target)
+        diagnostic["dropZoneDuringDrag"] = {
+            key: drop_zone.get(key)
+            for key in ("id", "before", "after", "targetBefore", "targetAfter")
+        } if drop_zone else None
         drag_styles = _enable_drag_pointer_passthrough(driver)
         drop_zone = _prepare_drop_zone(driver, target)
         try:
-            ActionChains(driver).move_to_element(card).click_and_hold().pause(0.2).perform()
-            ActionChains(driver).move_to_element(target).pause(0.2).release().perform()
+            _drag_with_chrome_input(driver, card, target)
         finally:
-            try:
-                ActionChains(driver).release().perform()
-            except WebDriverException:
-                pass
             try:
                 _restore_drop_zone(driver, drop_zone)
             finally:
