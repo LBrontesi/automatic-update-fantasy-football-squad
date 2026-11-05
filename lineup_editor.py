@@ -529,9 +529,55 @@ def _restore_drag_pointer_events(driver, saved):
     """, saved)
 
 
+def _prepare_drop_zone(driver, target):
+    """Give zero-height lineup rows a CDK hit area without moving their slots."""
+    return driver.execute_script("""
+      const zone = arguments[0].closest('.cdk-drop-list');
+      if (!zone) return null;
+      const zoneRect = zone.getBoundingClientRect();
+      const targetRect = arguments[0].getBoundingClientRect();
+      if (zoneRect.height >= targetRect.height * 0.75) return null;
+
+      const originalStyle = zone.getAttribute('style');
+      // The live lineup uses h-0 drop lists to position visible slots. CDK
+      // still tests the drop against the list rectangle, so make that rectangle
+      // cover the slots for the duration of this drag while keeping their
+      // current centers fixed.
+      for (const [name, value] of Object.entries({
+        position: 'fixed', left: `${zoneRect.left}px`, top: `${targetRect.top}px`,
+        width: `${zoneRect.width}px`, height: `${targetRect.height}px`,
+        transform: 'none', margin: '0', zIndex: '1001', pointerEvents: 'auto'
+      })) zone.style.setProperty(name, value, 'important');
+
+      const updatedZone = zone.getBoundingClientRect();
+      const updatedTarget = arguments[0].getBoundingClientRect();
+      return {
+        id: zone.id,
+        originalStyle,
+        before: {x: zoneRect.x, y: zoneRect.y, width: zoneRect.width, height: zoneRect.height},
+        after: {x: updatedZone.x, y: updatedZone.y, width: updatedZone.width, height: updatedZone.height},
+        targetBefore: {x: targetRect.x, y: targetRect.y, width: targetRect.width, height: targetRect.height},
+        targetAfter: {x: updatedTarget.x, y: updatedTarget.y, width: updatedTarget.width, height: updatedTarget.height}
+      };
+    """, target)
+
+
+def _restore_drop_zone(driver, saved):
+    if saved:
+        driver.execute_script("""
+          const zone = document.getElementById(arguments[0].id);
+          if (!zone) return;
+          if (arguments[0].originalStyle === null) zone.removeAttribute('style');
+          else zone.setAttribute('style', arguments[0].originalStyle);
+        """, saved)
+
+
 def _install_drag_probe(driver):
     driver.execute_script("""
-      if (window.__fantasquadDragProbe?.installed) return;
+      if (window.__fantasquadDragProbe?.installed) {
+        window.__fantasquadDragProbe.events = [];
+        return;
+      }
       window.__fantasquadDragProbe = {installed:true, href:location.href, events:[]};
       const summarize = el => el && ({tag: el.tagName, id: el.id || '',
         className: typeof el.className === 'string' ? el.className : ''});
@@ -572,6 +618,7 @@ def _place_player(driver, player, bench=False):
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
     _install_drag_probe(driver)
     drag_styles = _enable_drag_pointer_passthrough(driver)
+    drop_zone = _prepare_drop_zone(driver, target)
     try:
         # Separate press and release into distinct W3C action sequences.
         # Chrome can leave a combined chain held after repeated CDK drags.
@@ -582,7 +629,10 @@ def _place_player(driver, player, bench=False):
             ActionChains(driver).release().perform()
         except WebDriverException:
             pass
-        _restore_drag_pointer_events(driver, drag_styles)
+        try:
+            _restore_drop_zone(driver, drop_zone)
+        finally:
+            _restore_drag_pointer_events(driver, drag_styles)
     try:
         WebDriverWait(driver, 5, ignored_exceptions=(StaleElementReferenceException,)).until(placed)
     except TimeoutException:
@@ -612,6 +662,7 @@ def _place_player(driver, player, bench=False):
             fixtureMouse: window.__dragProbe?.slice(-4) || []};
         """, card, target)
         drag_styles = _enable_drag_pointer_passthrough(driver)
+        drop_zone = _prepare_drop_zone(driver, target)
         try:
             ActionChains(driver).move_to_element(card).click_and_hold().pause(0.2).perform()
             ActionChains(driver).move_to_element(target).pause(0.2).release().perform()
@@ -620,7 +671,10 @@ def _place_player(driver, player, bench=False):
                 ActionChains(driver).release().perform()
             except WebDriverException:
                 pass
-            _restore_drag_pointer_events(driver, drag_styles)
+            try:
+                _restore_drop_zone(driver, drop_zone)
+            finally:
+                _restore_drag_pointer_events(driver, drag_styles)
         try:
             WebDriverWait(driver, 8, ignored_exceptions=(StaleElementReferenceException,)).until(placed)
         except TimeoutException as exc:
