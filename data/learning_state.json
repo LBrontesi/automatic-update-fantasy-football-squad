@@ -20,10 +20,10 @@
           7048,
           7599,
           4807,
-          7556,
+          152,
           6844,
-          6435,
-          6752
+          6752,
+          5637
         ],
         "bench_roles": [
           "G",
@@ -133,29 +133,29 @@
           "season_id": 21,
           "source": 1
         },
-        "formation": "3-5-2",
+        "formation": "3-4-3",
         "prediction_by_role": {
           "A": {
-            "count": 2,
-            "score_sum": 4.68
+            "count": 3,
+            "score_sum": 7.596
           },
           "C": {
-            "count": 5,
-            "score_sum": 12.238
+            "count": 4,
+            "score_sum": 9.902
           },
           "D": {
             "count": 3,
-            "score_sum": 6.372
+            "score_sum": 6.624
           },
           "G": {
             "count": 1,
-            "score_sum": 1.1
+            "score_sum": 0.6
           }
         },
         "roster": {
           "152": {
             "expected_contribution": 5.84,
-            "group": "starter",
+            "group": "bench",
             "name": "Zielinski",
             "role": "C",
             "scale": 0.39999999999999997,
@@ -178,12 +178,12 @@
             "score": 0.0
           },
           "4317": {
-            "expected_contribution": 5.04,
+            "expected_contribution": 5.67,
             "group": "starter",
             "name": "N'Dicka",
             "role": "D",
-            "scale": 0.4,
-            "score": 2.016
+            "scale": 0.39999999999999997,
+            "score": 2.268
           },
           "4371": {
             "expected_contribution": 0.0,
@@ -210,12 +210,12 @@
             "score": 1.536
           },
           "4973": {
-            "expected_contribution": 3.4650000000000003,
+            "expected_contribution": 3.78,
             "group": "excluded",
             "name": "McKennie",
             "role": "C",
-            "scale": 0.3999999999999999,
-            "score": 1.386
+            "scale": 0.4,
+            "score": 1.512
           },
           "4976": {
             "expected_contribution": 5.3100000000000005,
@@ -235,7 +235,7 @@
           },
           "5637": {
             "expected_contribution": 3.8350000000000004,
-            "group": "excluded",
+            "group": "bench",
             "name": "Davis K.",
             "role": "A",
             "scale": 0.39999999999999997,
@@ -266,20 +266,20 @@
             "score": 2.34
           },
           "610": {
-            "expected_contribution": 2.75,
+            "expected_contribution": 1.5,
             "group": "starter",
             "name": "Gollini",
             "role": "G",
-            "scale": 0.4,
-            "score": 1.1
+            "scale": 0.39999999999999997,
+            "score": 0.6
           },
           "6435": {
-            "expected_contribution": 5.265,
-            "group": "bench",
+            "expected_contribution": 7.29,
+            "group": "starter",
             "name": "Krstovic",
             "role": "A",
-            "scale": 0.4,
-            "score": 2.106
+            "scale": 0.39999999999999997,
+            "score": 2.916
           },
           "6752": {
             "expected_contribution": 4.64,
@@ -306,12 +306,12 @@
             "score": 2.34
           },
           "7048": {
-            "expected_contribution": 0.06,
+            "expected_contribution": 0.30000000000000004,
             "group": "bench",
             "name": "De Marzi",
             "role": "G",
-            "scale": 0.4,
-            "score": 0.024
+            "scale": 0.3999999999999999,
+            "score": 0.12
           },
           "7126": {
             "expected_contribution": 6.034999999999999,
@@ -330,12 +330,12 @@
             "score": 2.556
           },
           "7556": {
-            "expected_contribution": 4.56,
-            "group": "bench",
+            "expected_contribution": 4.18,
+            "group": "excluded",
             "name": "Mora",
             "role": "C",
             "scale": 0.4,
-            "score": 1.824
+            "score": 1.672
           },
           "7599": {
             "expected_contribution": 4.68,
@@ -354,17 +354,17 @@
             "score": 2.376
           }
         },
-        "saved_at": "2026-11-06T06:59:17.797056+00:00",
+        "saved_at": "2026-11-06T16:52:42.471404+00:00",
         "starter_ids": [
           610,
+          4317,
           2296,
           4976,
-          4317,
           536,
           7314,
           7126,
           795,
-          152,
+          6435,
           5995,
           7017
         ]
@@ -385,8 +385,8 @@
           4360,
           5982,
           6496,
-          2167,
           5674,
+          2167,
           7620,
           7623
         ],
@@ -502,7 +502,7 @@
         "prediction_by_role": {
           "A": {
             "count": 3,
-            "score_sum": 7.488
+            "score_sum": 8.064
           },
           "C": {
             "count": 3,
@@ -527,20 +527,20 @@
             "score": 1.8
           },
           "1933": {
-            "expected_contribution": 0.0,
+            "expected_contribution": 3.3,
             "group": "excluded",
             "name": "Mandragora",
             "role": "C",
-            "scale": 0.0,
-            "score": 0.0
+            "scale": 0.4,
+            "score": 1.32
           },
           "2038": {
-            "expected_contribution": 4.32,
+            "expected_contribution": 5.760000000000001,
             "group": "starter",
             "name": "Pinamonti",
             "role": "A",
-            "scale": 0.39999999999999997,
-            "score": 1.728
+            "scale": 0.3999999999999999,
+            "score": 2.304
           },
           "2167": {
             "expected_contribution": 4.2,
@@ -567,12 +567,12 @@
             "score": 2.268
           },
           "4210": {
-            "expected_contribution": 3.08,
+            "expected_contribution": 0.0,
             "group": "excluded",
             "name": "Mina",
             "role": "D",
-            "scale": 0.39999999999999997,
-            "score": 1.232
+            "scale": 0.0,
+            "score": 0.0
           },
           "4360": {
             "expected_contribution": 4.41,
@@ -591,12 +591,12 @@
             "score": 3.024
           },
           "4973": {
-            "expected_contribution": 3.4650000000000003,
+            "expected_contribution": 3.78,
             "group": "excluded",
             "name": "McKennie",
             "role": "C",
-            "scale": 0.3999999999999999,
-            "score": 1.386
+            "scale": 0.4,
+            "score": 1.512
           },
           "4994": {
             "expected_contribution": 5.04,
@@ -615,12 +615,12 @@
             "score": 2.052
           },
           "5674": {
-            "expected_contribution": 3.48,
+            "expected_contribution": 4.64,
             "group": "bench",
             "name": "Basic",
             "role": "C",
-            "scale": 0.39999999999999997,
-            "score": 1.392
+            "scale": 0.4,
+            "score": 1.856
           },
           "5687": {
             "expected_contribution": 5.49,
@@ -719,7 +719,7 @@
             "score": 1.32
           }
         },
-        "saved_at": "2026-11-06T06:58:30.361189+00:00",
+        "saved_at": "2026-11-06T16:51:52.613595+00:00",
         "starter_ids": [
           133,
           6217,
