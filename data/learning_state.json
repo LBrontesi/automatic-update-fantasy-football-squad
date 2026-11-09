@@ -368,9 +368,735 @@
           5995,
           7017
         ]
+      },
+      "9": {
+        "allowed_formations": [
+          "3-4-3",
+          "3-5-2",
+          "4-3-3",
+          "4-4-2",
+          "4-5-1",
+          "5-3-2",
+          "5-4-1"
+        ],
+        "bench_ids": [
+          610,
+          4657,
+          7599,
+          536,
+          4973,
+          6752,
+          5637
+        ],
+        "bench_roles": [
+          "G",
+          "D",
+          "D",
+          "C",
+          "C",
+          "A",
+          "A"
+        ],
+        "context": {
+          "bonuses": {
+            "bmasf": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "bmasg": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "bmass": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "bmcg": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "bmcsh": 1,
+            "bmdg": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "bmeg": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "bmgc": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "bmgs": [
+              3,
+              3,
+              3,
+              3
+            ],
+            "bmog": [
+              -2,
+              -2,
+              -2,
+              -2
+            ],
+            "bmpns": [
+              -3,
+              -3,
+              -3,
+              -3
+            ],
+            "bmpsa": [
+              3,
+              3,
+              3,
+              3
+            ],
+            "bmpsc": [
+              3,
+              3,
+              3,
+              3
+            ],
+            "bmrc": [
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "bmyc": [
+              -0.5,
+              -0.5,
+              -0.5,
+              -0.5
+            ],
+            "bmycsv": 0,
+            "motm": [
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "season": "2026/27",
+          "season_id": 21,
+          "source": 1
+        },
+        "formation": "3-4-3",
+        "prediction_by_role": {
+          "A": {
+            "count": 3,
+            "score_sum": 7.992
+          },
+          "C": {
+            "count": 4,
+            "score_sum": 9.624
+          },
+          "D": {
+            "count": 3,
+            "score_sum": 6.534
+          },
+          "G": {
+            "count": 1,
+            "score_sum": 0.696
+          }
+        },
+        "roster": {
+          "152": {
+            "expected_contribution": 5.84,
+            "group": "starter",
+            "name": "Zielinski",
+            "role": "C",
+            "scale": 0.39999999999999997,
+            "score": 2.336
+          },
+          "2296": {
+            "expected_contribution": 0.0,
+            "group": "excluded",
+            "name": "Mancini",
+            "role": "D",
+            "scale": 0.0,
+            "score": 0.0
+          },
+          "2816": {
+            "expected_contribution": 0.0,
+            "group": "excluded",
+            "name": "Di Lorenzo",
+            "role": "D",
+            "scale": 0.0,
+            "score": 0.0
+          },
+          "4317": {
+            "expected_contribution": 5.3549999999999995,
+            "group": "starter",
+            "name": "N'Dicka",
+            "role": "D",
+            "scale": 0.4,
+            "score": 2.142
+          },
+          "4371": {
+            "expected_contribution": 1.36,
+            "group": "excluded",
+            "name": "Raspadori",
+            "role": "A",
+            "scale": 0.4,
+            "score": 0.544
+          },
+          "4657": {
+            "expected_contribution": 4.720000000000001,
+            "group": "bench",
+            "name": "Celik",
+            "role": "D",
+            "scale": 0.3999999999999999,
+            "score": 1.888
+          },
+          "4807": {
+            "expected_contribution": 5.779999999999999,
+            "group": "starter",
+            "name": "Hermoso",
+            "role": "D",
+            "scale": 0.4,
+            "score": 2.312
+          },
+          "4973": {
+            "expected_contribution": 5.04,
+            "group": "bench",
+            "name": "McKennie",
+            "role": "C",
+            "scale": 0.4,
+            "score": 2.016
+          },
+          "4976": {
+            "expected_contribution": 0.0,
+            "group": "excluded",
+            "name": "Kalulu",
+            "role": "D",
+            "scale": 0.0,
+            "score": 0.0
+          },
+          "536": {
+            "expected_contribution": 5.6000000000000005,
+            "group": "bench",
+            "name": "Politano",
+            "role": "C",
+            "scale": 0.4,
+            "score": 2.24
+          },
+          "5637": {
+            "expected_contribution": 5.3100000000000005,
+            "group": "bench",
+            "name": "Davis K.",
+            "role": "A",
+            "scale": 0.39999999999999997,
+            "score": 2.124
+          },
+          "5841": {
+            "expected_contribution": 1.74,
+            "group": "starter",
+            "name": "Svilar",
+            "role": "G",
+            "scale": 0.39999999999999997,
+            "score": 0.696
+          },
+          "5982": {
+            "expected_contribution": 5.2,
+            "group": "starter",
+            "name": "Spence",
+            "role": "D",
+            "scale": 0.4,
+            "score": 2.08
+          },
+          "5995": {
+            "expected_contribution": 5.67,
+            "group": "starter",
+            "name": "De Ketelaere",
+            "role": "A",
+            "scale": 0.39999999999999997,
+            "score": 2.268
+          },
+          "610": {
+            "expected_contribution": 0.25,
+            "group": "bench",
+            "name": "Gollini",
+            "role": "G",
+            "scale": 0.4,
+            "score": 0.1
+          },
+          "6435": {
+            "expected_contribution": 7.470000000000001,
+            "group": "starter",
+            "name": "Krstovic",
+            "role": "A",
+            "scale": 0.39999999999999997,
+            "score": 2.988
+          },
+          "6752": {
+            "expected_contribution": 5.67,
+            "group": "bench",
+            "name": "Woltemade",
+            "role": "A",
+            "scale": 0.39999999999999997,
+            "score": 2.268
+          },
+          "6844": {
+            "expected_contribution": 4.199999999999999,
+            "group": "excluded",
+            "name": "Rowe",
+            "role": "C",
+            "scale": 0.4000000000000001,
+            "score": 1.68
+          },
+          "7017": {
+            "expected_contribution": 6.84,
+            "group": "starter",
+            "name": "Douvikas",
+            "role": "A",
+            "scale": 0.4,
+            "score": 2.736
+          },
+          "7048": {
+            "expected_contribution": 0.06,
+            "group": "excluded",
+            "name": "De Marzi",
+            "role": "G",
+            "scale": 0.4,
+            "score": 0.024
+          },
+          "7126": {
+            "expected_contribution": 5.6000000000000005,
+            "group": "starter",
+            "name": "Baturina",
+            "role": "C",
+            "scale": 0.4,
+            "score": 2.24
+          },
+          "7314": {
+            "expected_contribution": 6.3,
+            "group": "starter",
+            "name": "Taylor K.",
+            "role": "C",
+            "scale": 0.4,
+            "score": 2.52
+          },
+          "7556": {
+            "expected_contribution": 6.32,
+            "group": "starter",
+            "name": "Mora",
+            "role": "C",
+            "scale": 0.39999999999999997,
+            "score": 2.528
+          },
+          "7599": {
+            "expected_contribution": 4.68,
+            "group": "bench",
+            "name": "Lulli",
+            "role": "D",
+            "scale": 0.4,
+            "score": 1.872
+          },
+          "795": {
+            "expected_contribution": 4.55,
+            "group": "excluded",
+            "name": "El Shaarawy",
+            "role": "C",
+            "scale": 0.4,
+            "score": 1.82
+          }
+        },
+        "saved_at": "2026-11-09T19:57:01.247691+00:00",
+        "starter_ids": [
+          5841,
+          4807,
+          4317,
+          5982,
+          7556,
+          7314,
+          152,
+          7126,
+          6435,
+          7017,
+          5995
+        ]
       }
     },
     "rusticatorsapienza_view_competition_532351_lineup": {
+      "10": {
+        "allowed_formations": [
+          "3-4-3",
+          "3-5-2",
+          "4-3-3",
+          "4-4-2",
+          "4-5-1",
+          "5-3-2",
+          "5-4-1"
+        ],
+        "bench_ids": [
+          133,
+          5514,
+          4994,
+          1933,
+          5674,
+          7620,
+          7623
+        ],
+        "bench_roles": [
+          "G",
+          "D",
+          "D",
+          "C",
+          "C",
+          "A",
+          "A"
+        ],
+        "context": {
+          "bonuses": {
+            "bmasf": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "bmasg": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "bmass": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "bmcg": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "bmcsh": 1,
+            "bmdg": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "bmeg": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "bmgc": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "bmgs": [
+              3,
+              3,
+              3,
+              3
+            ],
+            "bmog": [
+              -2,
+              -2,
+              -2,
+              -2
+            ],
+            "bmpns": [
+              -3,
+              -3,
+              -3,
+              -3
+            ],
+            "bmpsa": [
+              3,
+              3,
+              3,
+              3
+            ],
+            "bmpsc": [
+              3,
+              3,
+              3,
+              3
+            ],
+            "bmrc": [
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "bmyc": [
+              -0.5,
+              -0.5,
+              -0.5,
+              -0.5
+            ],
+            "bmycsv": 0,
+            "motm": [
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "season": "2026/27",
+          "season_id": 21,
+          "source": 1
+        },
+        "formation": "3-4-3",
+        "prediction_by_role": {
+          "A": {
+            "count": 3,
+            "score_sum": 8.004
+          },
+          "C": {
+            "count": 4,
+            "score_sum": 9.364
+          },
+          "D": {
+            "count": 3,
+            "score_sum": 6.22
+          },
+          "G": {
+            "count": 1,
+            "score_sum": 1.836
+          }
+        },
+        "roster": {
+          "133": {
+            "expected_contribution": 4.59,
+            "group": "bench",
+            "name": "Skorupski",
+            "role": "G",
+            "scale": 0.4,
+            "score": 1.836
+          },
+          "1933": {
+            "expected_contribution": 5.28,
+            "group": "bench",
+            "name": "Mandragora",
+            "role": "C",
+            "scale": 0.4,
+            "score": 2.112
+          },
+          "2038": {
+            "expected_contribution": 5.5200000000000005,
+            "group": "starter",
+            "name": "Pinamonti",
+            "role": "A",
+            "scale": 0.4,
+            "score": 2.208
+          },
+          "2167": {
+            "expected_contribution": 5.319999999999999,
+            "group": "starter",
+            "name": "Orsolini",
+            "role": "C",
+            "scale": 0.4000000000000001,
+            "score": 2.128
+          },
+          "2514": {
+            "expected_contribution": 1.45,
+            "group": "excluded",
+            "name": "Stones",
+            "role": "D",
+            "scale": 0.39999999999999997,
+            "score": 0.58
+          },
+          "2766": {
+            "expected_contribution": 5.58,
+            "group": "starter",
+            "name": "Zaniolo",
+            "role": "C",
+            "scale": 0.4,
+            "score": 2.232
+          },
+          "4210": {
+            "expected_contribution": 0.0,
+            "group": "excluded",
+            "name": "Mina",
+            "role": "D",
+            "scale": 0.0,
+            "score": 0.0
+          },
+          "4360": {
+            "expected_contribution": 4.59,
+            "group": "starter",
+            "name": "Caprile",
+            "role": "G",
+            "scale": 0.4,
+            "score": 1.836
+          },
+          "4871": {
+            "expected_contribution": 7.829999999999999,
+            "group": "starter",
+            "name": "Thuram",
+            "role": "A",
+            "scale": 0.4000000000000001,
+            "score": 3.132
+          },
+          "4973": {
+            "expected_contribution": 5.04,
+            "group": "excluded",
+            "name": "McKennie",
+            "role": "C",
+            "scale": 0.4,
+            "score": 2.016
+          },
+          "4994": {
+            "expected_contribution": 4.76,
+            "group": "bench",
+            "name": "Vojvoda",
+            "role": "D",
+            "scale": 0.4,
+            "score": 1.904
+          },
+          "5514": {
+            "expected_contribution": 5.04,
+            "group": "bench",
+            "name": "Vasquez",
+            "role": "D",
+            "scale": 0.4,
+            "score": 2.016
+          },
+          "5674": {
+            "expected_contribution": 5.04,
+            "group": "bench",
+            "name": "Basic",
+            "role": "C",
+            "scale": 0.4,
+            "score": 2.016
+          },
+          "5687": {
+            "expected_contribution": 5.49,
+            "group": "starter",
+            "name": "Vlasic",
+            "role": "C",
+            "scale": 0.4,
+            "score": 2.196
+          },
+          "5739": {
+            "expected_contribution": 5.3100000000000005,
+            "group": "starter",
+            "name": "De Winter",
+            "role": "D",
+            "scale": 0.39999999999999997,
+            "score": 2.124
+          },
+          "5946": {
+            "expected_contribution": 2.9,
+            "group": "excluded",
+            "name": "Sow",
+            "role": "C",
+            "scale": 0.39999999999999997,
+            "score": 1.16
+          },
+          "5982": {
+            "expected_contribution": 5.2,
+            "group": "starter",
+            "name": "Spence",
+            "role": "D",
+            "scale": 0.4,
+            "score": 2.08
+          },
+          "6217": {
+            "expected_contribution": 5.04,
+            "group": "starter",
+            "name": "Bisseck",
+            "role": "D",
+            "scale": 0.4,
+            "score": 2.016
+          },
+          "6398": {
+            "expected_contribution": 7.02,
+            "group": "starter",
+            "name": "Isaksen",
+            "role": "C",
+            "scale": 0.4,
+            "score": 2.808
+          },
+          "6496": {
+            "expected_contribution": 3.3,
+            "group": "excluded",
+            "name": "Bartesaghi",
+            "role": "D",
+            "scale": 0.4,
+            "score": 1.32
+          },
+          "6530": {
+            "expected_contribution": 6.66,
+            "group": "starter",
+            "name": "Ghedjemis",
+            "role": "A",
+            "scale": 0.4,
+            "score": 2.664
+          },
+          "6662": {
+            "expected_contribution": 0.205,
+            "group": "excluded",
+            "name": "Corvi",
+            "role": "G",
+            "scale": 0.4,
+            "score": 0.082
+          },
+          "7449": {
+            "expected_contribution": 2.85,
+            "group": "excluded",
+            "name": "Rrahmani Al.",
+            "role": "A",
+            "scale": 0.39999999999999997,
+            "score": 1.14
+          },
+          "7620": {
+            "expected_contribution": 3.5200000000000005,
+            "group": "bench",
+            "name": "Zeballos",
+            "role": "A",
+            "scale": 0.3999999999999999,
+            "score": 1.408
+          },
+          "7623": {
+            "expected_contribution": 3.3,
+            "group": "bench",
+            "name": "Gnonto",
+            "role": "A",
+            "scale": 0.4,
+            "score": 1.32
+          }
+        },
+        "saved_at": "2026-11-09T19:56:09.250133+00:00",
+        "starter_ids": [
+          4360,
+          5739,
+          5982,
+          6217,
+          6398,
+          2766,
+          5687,
+          2167,
+          4871,
+          6530,
+          2038
+        ]
+      },
       "9": {
         "allowed_formations": [
           "3-4-3",
