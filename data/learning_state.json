@@ -717,7 +717,7 @@
             "score": 1.82
           }
         },
-        "saved_at": "2026-11-10T15:02:28.427068+00:00",
+        "saved_at": "2026-11-10T21:23:27.476431+00:00",
         "starter_ids": [
           5841,
           4807,
@@ -748,8 +748,8 @@
           133,
           5514,
           4994,
-          1933,
           5674,
+          4973,
           7620,
           7623
         ],
@@ -861,15 +861,15 @@
           "season_id": 21,
           "source": 1
         },
-        "formation": "3-4-3",
+        "formation": "3-5-2",
         "prediction_by_role": {
           "A": {
-            "count": 3,
-            "score_sum": 8.004
+            "count": 2,
+            "score_sum": 4.872
           },
           "C": {
-            "count": 4,
-            "score_sum": 9.364
+            "count": 5,
+            "score_sum": 11.476
           },
           "D": {
             "count": 3,
@@ -891,7 +891,7 @@
           },
           "1933": {
             "expected_contribution": 5.28,
-            "group": "bench",
+            "group": "starter",
             "name": "Mandragora",
             "role": "C",
             "scale": 0.4,
@@ -946,16 +946,16 @@
             "score": 1.836
           },
           "4871": {
-            "expected_contribution": 7.829999999999999,
-            "group": "starter",
+            "expected_contribution": 0.0,
+            "group": "excluded",
             "name": "Thuram",
             "role": "A",
-            "scale": 0.4000000000000001,
-            "score": 3.132
+            "scale": 0.0,
+            "score": 0.0
           },
           "4973": {
             "expected_contribution": 5.04,
-            "group": "excluded",
+            "group": "bench",
             "name": "McKennie",
             "role": "C",
             "scale": 0.4,
@@ -1082,7 +1082,7 @@
             "score": 1.32
           }
         },
-        "saved_at": "2026-11-10T15:01:44.037689+00:00",
+        "saved_at": "2026-11-10T21:22:42.258991+00:00",
         "starter_ids": [
           4360,
           5739,
@@ -1092,7 +1092,7 @@
           2766,
           5687,
           2167,
-          4871,
+          1933,
           6530,
           2038
         ]
