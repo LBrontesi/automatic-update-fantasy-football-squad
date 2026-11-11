@@ -21,6 +21,8 @@ Telegram does not provide an idempotency key for `sendMessage`. A request timeou
 
 `.github/workflows/telegram-reminder.yml` supports manual `check`, `test`, and `tick` runs, plus a cloud check every 15 minutes. Scheduled delivery is enabled only when the repository variable `TELEGRAM_REMINDERS_ENABLED` equals `true`; pair the bot and verify a cloud connection test before setting it. Early cloud runs wait up to 20 minutes for the exact two-hour target, then recheck the calendar before sending. GitHub scheduling can still be delayed, so exact delivery time is not guaranteed. The Mac does not need to remain on. To pause reminders, set the variable to `false` or disable **Telegram formation reminder** in Actions. This workflow is separate from the disabled squad-update workflow. The `check` mode runs only reminder tests and a public fixture check.
 
+The manual **Telegram runner health check** workflow starts a minimal job without accessing Telegram or the fixture source. Use it to distinguish a GitHub startup problem from an error inside the reminder. It has no recurring schedule.
+
 ## Historical squad bot
 
 Selenium bot for Classic leagues on [Fantacalcio](https://leghe.fantacalcio.it). It ranks each league's own players, chooses an allowed formation, fills starters and reserves, and verifies the saved lineup after reloading. GitHub Actions attempts an update every three hours; scheduled runs can be delayed, so submission before a deadline is not guaranteed.
