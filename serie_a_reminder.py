@@ -81,8 +81,17 @@ def current_season(html):
 
 def public_get(url):
     request = Request(url, headers={'User-Agent': 'serie-a-personal-reminder/1.0'})
-    with urlopen(request, timeout=20) as response:
-        return response.read(5_000_000).decode('utf-8')
+    for attempt in range(3):
+        try:
+            with urlopen(request, timeout=20) as response:
+                return response.read(5_000_000).decode('utf-8')
+        except HTTPError as exc:
+            if exc.code not in (429, 500, 502, 503, 504) or attempt == 2:
+                raise
+        except (URLError, TimeoutError):
+            if attempt == 2:
+                raise
+        time.sleep(2 ** attempt)
 
 
 def plan_from_matches(payload, season_id, season_name, now):
@@ -106,19 +115,20 @@ def plan_from_matches(payload, season_id, season_name, now):
     if not rounds:
         raise ValueError('The official fixture calendar is empty')
     for number, matches in sorted(rounds.items()):
-        if len(matches) != 10 or len({m[side]['teamId'] for m in matches for side in ('home', 'away')}) != 20:
-            raise ValueError(f'Giornata {number} has incomplete or conflicting fixtures')
         # Even a postponed opening fixture must not create a second reminder
         # after another match in the same numbered round has already started.
         if any(m['status'].upper() in ('FINISHED', 'LIVE', 'SUSPENDED', 'ABANDONED')
-               or utc(m['matchDateUtc']) <= now and m['status'].upper() not in ('POSTPONED', 'CANCELED')
+               or m.get('isUnknownKickOffTime') is False and m.get('matchDateUtc')
+               and utc(m['matchDateUtc']) <= now and m['status'].upper() not in ('POSTPONED', 'CANCELED')
                for m in matches):
             continue
+        if len(matches) != 10 or len({m[side]['teamId'] for m in matches for side in ('home', 'away')}) != 20:
+            raise ValueError(f'Giornata {number} has incomplete or conflicting fixtures')
         active = [m for m in matches if m['status'].upper() != 'CANCELED']
         if not active:
             continue
         # Do not skip an uncertain earlier round and guess a later round's deadline.
-        if any(m.get('isUnknownKickOffTime') is not False
+        if any(m.get('isUnknownKickOffTime') is not False or not m.get('matchDateUtc')
                or m['status'].upper() not in ('UPCOMING', 'LINEUP') for m in active):
             return None
         first = min(utc(m['matchDateUtc']) for m in active)
@@ -148,6 +158,18 @@ def message_text(plan):
     return '\n'.join(lines)
 
 
+class TelegramRejected(RuntimeError):
+    """An explicit API rejection confirms that this request did not send a message."""
+    def __init__(self, method, code, retry_after=0):
+        self.code = code
+        try:
+            retry_after = int(retry_after)
+        except (ValueError, TypeError):
+            retry_after = 60
+        self.retry_after = max(1, min(3600, retry_after)) if code == 429 else 0
+        super().__init__(f'Telegram {method} rejected the request (HTTP {code})')
+
+
 def telegram_api(token, method, data=None):
     """Never include the token-bearing request URL in errors or logs."""
     request = Request(f'https://api.telegram.org/bot{token}/{method}',
@@ -157,11 +179,23 @@ def telegram_api(token, method, data=None):
         with urlopen(request, timeout=20) as response:
             result = json.loads(response.read(2_000_000))
     except HTTPError as exc:
-        raise RuntimeError(f'Telegram {method} failed (HTTP {exc.code})') from None
+        retry_after = 60
+        if exc.code == 429:
+            try:
+                retry_after = int(json.loads(exc.read()).get('parameters', {}).get('retry_after', 60))
+            except (ValueError, TypeError):
+                pass
+        if 400 <= exc.code < 500:
+            raise TelegramRejected(method, exc.code, retry_after) from None
+        raise RuntimeError(f'Telegram {method} failed (HTTP {exc.code}); delivery may be unconfirmed') from None
     except (URLError, TimeoutError, ValueError):
         raise RuntimeError(f'Telegram {method} failed; delivery may be unconfirmed') from None
     if result.get('ok') is not True:
-        raise RuntimeError(f'Telegram {method} rejected the request')
+        code = result.get('error_code')
+        if isinstance(code, int) and 400 <= code < 500:
+            retry_after = result.get('parameters', {}).get('retry_after', 60)
+            raise TelegramRejected(method, code, retry_after)
+        raise RuntimeError(f'Telegram {method} failed; delivery may be unconfirmed')
     return result['result']
 
 
@@ -207,18 +241,33 @@ def save_state(state, path=STATE_PATH, git=False):
     temp.write_text(json.dumps(state, indent=2, sort_keys=True) + '\n')
     temp.replace(path)
     if git:
+        identity = ['-c', 'user.name=github-actions[bot]', '-c',
+                    'user.email=41898282+github-actions[bot]@users.noreply.github.com']
         relative = str(path.relative_to(ROOT))
         changed = subprocess.run(['git', 'diff', '--quiet', '--', relative], cwd=ROOT)
         if changed.returncode not in (0, 1):
             raise RuntimeError('Could not inspect reminder persistence')
         if changed.returncode == 1:
             subprocess.run(['git', 'add', '--', relative], cwd=ROOT, check=True)
-            subprocess.run(['git', '-c', 'user.name=github-actions[bot]', '-c',
-                            'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+            subprocess.run(['git', *identity,
                             'commit', '--only', '-m', 'chore: persist Telegram reminder state', '--', relative],
                            cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
-            subprocess.run(['git', 'push', 'origin', 'HEAD:main'], cwd=ROOT, check=True,
-                           stdout=subprocess.DEVNULL)
+            pushed = subprocess.run(['git', 'push', 'origin', 'HEAD:main'], cwd=ROOT,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            if pushed.returncode:
+                # A code/documentation push while this runner waited must not
+                # lose the reminder. Rebase only this job's state commit. A
+                # conflicting reminder reservation still fails before delivery.
+                subprocess.run(['git', 'fetch', 'origin', 'main'], cwd=ROOT, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                rebased = subprocess.run(['git', *identity, 'rebase', 'origin/main'], cwd=ROOT,
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if rebased.returncode:
+                    subprocess.run(['git', 'rebase', '--abort'], cwd=ROOT,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    raise RuntimeError('Reminder state changed remotely; delivery stopped to avoid a duplicate')
+                subprocess.run(['git', 'push', 'origin', 'HEAD:main'], cwd=ROOT, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def run_tick(state, now, persist, sender, fetcher=fetch_plan):
@@ -226,17 +275,28 @@ def run_tick(state, now, persist, sender, fetcher=fetch_plan):
     now = now.astimezone(timezone.utc)
     checked = utc(state['checked_at']) if state.get('checked_at') else None
     plan = state.get('plan')
-    near = plan and utc(plan['kickoff']) - now <= timedelta(hours=3)
+    # Recheck uncertain calendars and the entire opening day, so an earlier
+    # kickoff or newly confirmed time cannot remain hidden in a daily cache.
+    near = not plan or utc(plan['kickoff']).astimezone(ROME).date() <= now.astimezone(ROME).date()
+    max_age = timedelta(minutes=30) if near else timedelta(hours=6)
     refreshed = (checked is None or checked.astimezone(ROME).date() != now.astimezone(ROME).date()
-                 or near and now - checked >= timedelta(minutes=30))
+                 or now - checked >= max_age or checked > now + timedelta(minutes=5))
     if refreshed:
         state.update(plan=fetcher(now), checked_at=now.isoformat())
         persist(state)
         plan = state['plan']
     if plan is None:
         return 'No confirmed upcoming giornata; no message sent'
-    if plan['key'] in state['deliveries']:
-        return 'This giornata already has a delivery record; no duplicate sent'
+    previous = state['deliveries'].get(plan['key'])
+    if previous:
+        status = previous.get('status')
+        if status == 'sent':
+            return 'This giornata already has a delivery record; no duplicate sent'
+        if status == 'retryable':
+            if now < utc(previous['retry_at']):
+                return 'Telegram rate limit: waiting until the retry time; no message sent'
+        else:
+            raise RuntimeError(f'Previous Telegram delivery is {status}; inspect the chat before retrying')
     if not utc(plan['send_at']) <= now < utc(plan['kickoff']):
         return f"Next reminder: giornata {plan['round']}, {utc(plan['send_at']).astimezone(ROME).isoformat()}"
     if not refreshed:
@@ -244,14 +304,32 @@ def run_tick(state, now, persist, sender, fetcher=fetch_plan):
         state.update(plan=fetcher(now), checked_at=now.isoformat())
         persist(state)
         plan = state['plan']
-        if not plan or plan['key'] in state['deliveries'] or not utc(plan['send_at']) <= now < utc(plan['kickoff']):
+        if not plan or not utc(plan['send_at']) <= now < utc(plan['kickoff']):
             return 'Calendar changed; no reminder is due now'
+        previous = state['deliveries'].get(plan['key'])
+        if previous and previous.get('status') == 'sent':
+            return 'This giornata already has a delivery record; no duplicate sent'
+        if previous and previous.get('status') != 'retryable':
+            raise RuntimeError('Calendar changed to a round with an existing delivery record')
+        if previous and now < utc(previous['retry_at']):
+            return 'Telegram rate limit: waiting until the retry time; no message sent'
     record = {'status': 'claimed', 'claimed_at': now.isoformat(), 'send_at': plan['send_at']}
     state['deliveries'][plan['key']] = record
     persist(state)  # If this fails, Telegram is never called.
     # A timeout/crash can leave this claimed. Do not retry an uncertain delivery
     # automatically: sendMessage has no idempotency key.
-    message_id = sender(message_text(plan))
+    try:
+        message_id = sender(message_text(plan))
+    except TelegramRejected as exc:
+        record.update(status='retryable' if exc.code == 429 else 'rejected', error_code=exc.code)
+        if exc.code == 429:
+            record['retry_at'] = (now + timedelta(seconds=exc.retry_after)).isoformat()
+        persist(state)
+        raise
+    except Exception:
+        record['status'] = 'unconfirmed'
+        persist(state)
+        raise RuntimeError('Telegram delivery is unconfirmed; inspect the chat before retrying') from None
     record.update(status='sent', message_id=message_id, sent_at=now.isoformat())
     persist(state)
     return f"Telegram reminder sent for giornata {plan['round']}"
@@ -283,6 +361,33 @@ def load_credentials():
     if not re.fullmatch(r'\d+:[A-Za-z0-9_-]{20,}', token):
         raise ValueError('Set TELEGRAM_BOT_TOKEN in telegram.local.env or repository secrets')
     return token, os.environ.get('TELEGRAM_CHAT_ID', '').strip()
+
+
+def write_status_summary(error=None):
+    """Make normal scheduled runs and delivery problems visible in Actions."""
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if not summary:
+        return
+    lines = ['## Telegram formation reminder', '']
+    if error:
+        lines += ['**Run failed. Review the log before relying on this reminder.**', '']
+    try:
+        state = load_state()
+        plan = state.get('plan')
+        if plan:
+            lines += [f"Next giornata: **{plan['round']}** ({plan['season']}).", '',
+                      f"Kickoff: **{utc(plan['kickoff']).astimezone(ROME).isoformat()}**.", '',
+                      f"Reminder target: **{utc(plan['send_at']).astimezone(ROME).isoformat()}**.", '']
+        else:
+            lines += ['No confirmed upcoming giornata is available; the calendar will be checked again.', '']
+        unresolved = [key for key, item in state['deliveries'].items() if item.get('status') != 'sent']
+        if unresolved:
+            lines += [f'**{len(unresolved)} unresolved delivery record(s) require review.**', '']
+        lines += ['Calendar last checked: ' + str(state.get('checked_at')), '']
+    except (OSError, ValueError, KeyError, TypeError):
+        lines += ['Reminder state could not be read.', '']
+    with open(summary, 'a') as handle:
+        handle.write('\n'.join(lines) + '\n')
 
 
 def pair(github=False):
@@ -342,7 +447,11 @@ def main():
     except (ValueError, RuntimeError, OSError, KeyError, subprocess.CalledProcessError) as exc:
         # Provider/credential errors are sanitized inside telegram_api.
         print(f'Reminder error: {exc}')
+        if args.command == 'tick':
+            write_status_summary(error=True)
         return 1
+    if args.command == 'tick':
+        write_status_summary()
     return 0
 
 

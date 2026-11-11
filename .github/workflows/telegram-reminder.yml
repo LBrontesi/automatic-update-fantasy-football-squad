@@ -4,7 +4,7 @@ on:
   schedule:
     # Check cached deadlines every 15 minutes, away from the top of the hour.
     # An early runner waits briefly for kickoff minus two hours.
-    - cron: '2,17,32,47 * * * *'
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
     inputs:
       mode:

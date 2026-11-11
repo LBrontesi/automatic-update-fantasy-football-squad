@@ -2,6 +2,8 @@ from copy import deepcopy
 from datetime import timedelta
 from urllib.error import HTTPError
 import json
+from io import BytesIO
+import subprocess
 
 import pytest
 
@@ -103,7 +105,7 @@ def test_daily_check_is_cached_but_result_is_rechecked_before_delivery():
     sender = lambda text: sends.append(text) or 72
     for when in ['08:00', '09:00', '17:00', '17:45', '17:50']:
         reminder.run_tick(state, reminder.utc(f'2026-11-20T{when}:00Z'), persist, sender, fetch)
-    assert len(fetches) == 3
+    assert len(fetches) == 4
     assert len(sends) == 1
     assert writes[-2]['deliveries'][SEASON+':12']['status'] == 'claimed'
     assert writes[-1]['deliveries'][SEASON+':12']['status'] == 'sent'
@@ -141,12 +143,13 @@ def test_uncertain_delivery_is_not_automatically_sent_twice():
     state = reminder.empty_state()
     def sender(text):
         raise RuntimeError('response timed out')
-    with pytest.raises(RuntimeError, match='timed out'):
+    with pytest.raises(RuntimeError, match='unconfirmed'):
         reminder.run_tick(state, reminder.utc('2026-11-20T17:45:00Z'), lambda s: None,
                           sender, lambda now: make_plan(now=now.isoformat()))
-    result = reminder.run_tick(state, reminder.utc('2026-11-20T17:50:00Z'), lambda s: None,
-                               lambda text: pytest.fail('Uncertain message was retried'))
-    assert 'no duplicate' in result
+    with pytest.raises(RuntimeError, match='inspect the chat'):
+        reminder.run_tick(state, reminder.utc('2026-11-20T17:50:00Z'), lambda s: None,
+                          lambda text: pytest.fail('Uncertain message was retried'))
+    assert state['deliveries'][SEASON+':12']['status'] == 'unconfirmed'
 
 
 def test_no_message_after_the_first_match_has_started():
@@ -202,3 +205,117 @@ def test_telegram_transport_errors_do_not_expose_the_bot_token(monkeypatch):
 def test_negative_group_ids_cannot_be_used_for_a_personal_reminder():
     with pytest.raises(ValueError, match='personal'):
         reminder.send_message('token', '-10012345', 'text')
+
+
+def test_time_confirmed_later_on_the_same_day_is_not_stuck_in_an_empty_cache():
+    state = reminder.empty_state()
+    state['checked_at'] = '2026-11-20T08:00:00Z'
+    reminder.run_tick(state, reminder.utc('2026-11-20T10:00:00Z'), lambda s: None,
+        lambda text: pytest.fail('Reminder not due'), lambda now: make_plan(now=now.isoformat()))
+    assert state['plan']['round'] == 12
+
+
+def test_opening_moved_earlier_is_discovered_before_the_old_three_hour_window():
+    state = reminder.empty_state()
+    state.update(plan=make_plan(calendar_payload('2026-11-20T21:45:00Z')),
+                 checked_at='2026-11-20T08:00:00Z')
+    earlier = calendar_payload('2026-11-20T16:00:00Z')
+    reminder.run_tick(state, reminder.utc('2026-11-20T11:00:00Z'), lambda s: None,
+        lambda text: pytest.fail('Reminder not due'), lambda now: make_plan(earlier, now.isoformat()))
+    assert state['plan']['send_at'] == '2026-11-20T14:00:00+00:00'
+
+
+def test_unknown_placeholder_time_is_not_treated_as_an_already_started_round():
+    payload = calendar_payload('2026-11-20T00:00:00Z')
+    payload['matches'][0]['isUnknownKickOffTime'] = True
+    other = calendar_payload('2026-11-27T19:45:00Z', number=13)
+    for match in other['matches']:
+        match['matchId'] = 'next-' + match['matchId']
+    payload['matches'] += other['matches']
+    assert make_plan(payload, '2026-11-20T08:00:00Z') is None
+
+
+def test_missing_unknown_kickoff_defers_instead_of_crashing():
+    payload = calendar_payload()
+    payload['matches'][0].update(isUnknownKickOffTime=True, matchDateUtc=None)
+    assert make_plan(payload) is None
+
+
+def test_partial_historical_round_does_not_block_a_complete_upcoming_round():
+    payload = calendar_payload()
+    old = calendar_payload('2026-11-13T19:45:00Z', number=11)['matches'][:9]
+    for match in old:
+        match['matchId'] = 'old-' + match['matchId']
+        match['status'] = 'FINISHED'
+    payload['matches'] += old
+    assert make_plan(payload)['round'] == 12
+
+
+def test_explicit_telegram_rate_limit_is_retried_but_not_before_retry_after():
+    state = reminder.empty_state()
+    fetcher = lambda now: make_plan(now=now.isoformat())
+    def reject(text):
+        raise reminder.TelegramRejected('sendMessage', 429, 120)
+    with pytest.raises(reminder.TelegramRejected):
+        reminder.run_tick(state, reminder.utc('2026-11-20T17:45:00Z'), lambda s: None, reject, fetcher)
+    assert state['deliveries'][SEASON+':12']['status'] == 'retryable'
+    reminder.run_tick(state, reminder.utc('2026-11-20T17:46:00Z'), lambda s: None,
+                      lambda text: pytest.fail('Retried before Telegram allowed it'), fetcher)
+    sent = []
+    reminder.run_tick(state, reminder.utc('2026-11-20T17:47:00Z'), lambda s: None,
+                      lambda text: sent.append(text) or 77, fetcher)
+    assert len(sent) == 1
+    assert state['deliveries'][SEASON+':12']['status'] == 'sent'
+
+
+def test_telegram_429_response_is_recognized_without_exposing_its_url(monkeypatch):
+    def limited(request, timeout):
+        raise HTTPError(request.full_url, 429, 'rate limited', {},
+                        BytesIO(b'{"parameters":{"retry_after":90}}'))
+    monkeypatch.setattr(reminder, 'urlopen', limited)
+    with pytest.raises(reminder.TelegramRejected) as error:
+        reminder.telegram_api('never-log-this-token', 'sendMessage')
+    assert error.value.retry_after == 90
+    assert 'never-log' not in str(error.value)
+
+
+def test_temporary_public_calendar_error_is_retried(monkeypatch):
+    attempts = []
+    def get(request, timeout):
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise HTTPError(request.full_url, 503, 'unavailable', {}, None)
+        return BytesIO(b'calendar')
+    monkeypatch.setattr(reminder, 'urlopen', get)
+    monkeypatch.setattr(reminder.time, 'sleep', lambda seconds: None)
+    assert reminder.public_get(reminder.CALENDAR_URL) == 'calendar'
+    assert len(attempts) == 3
+
+
+def test_state_push_survives_an_unrelated_commit_during_the_wait(tmp_path, monkeypatch):
+    def git(cwd, *args):
+        return subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                               *args], cwd=cwd, check=True, capture_output=True, text=True).stdout
+    origin, seed, runner, updater = [tmp_path / name for name in ['origin.git', 'seed', 'runner', 'updater']]
+    git(tmp_path, 'init', '--bare', str(origin))
+    git(tmp_path, 'init', '-b', 'main', str(seed))
+    path = seed / 'data/state.json'
+    reminder.save_state(reminder.empty_state(), path)
+    git(seed, 'add', '.')
+    git(seed, 'commit', '-m', 'initial state')
+    git(seed, 'remote', 'add', 'origin', str(origin))
+    git(seed, 'push', '-u', 'origin', 'main')
+    git(origin, 'symbolic-ref', 'HEAD', 'refs/heads/main')
+    git(tmp_path, 'clone', str(origin), str(runner))
+    git(tmp_path, 'clone', str(origin), str(updater))
+    (updater / 'notes.txt').write_text('unrelated code or docs update')
+    git(updater, 'add', '.')
+    git(updater, 'commit', '-m', 'concurrent update')
+    git(updater, 'push')
+    monkeypatch.setattr(reminder, 'ROOT', runner)
+    state = reminder.empty_state()
+    state['checked_at'] = '2026-11-20T08:00:00Z'
+    reminder.save_state(state, runner / 'data/state.json', git=True)
+    saved = json.loads(git(origin, 'show', 'main:data/state.json'))
+    assert saved == state
+    assert (runner / 'notes.txt').read_text() == 'unrelated code or docs update'
