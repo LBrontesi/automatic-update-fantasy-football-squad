@@ -1,0 +1,15 @@
+name: Telegram runner health check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Confirm GitHub can start a runner
+        run: python3 -c 'print("GitHub runner started successfully")'
