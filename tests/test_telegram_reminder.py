@@ -279,6 +279,18 @@ def test_telegram_429_response_is_recognized_without_exposing_its_url(monkeypatc
     assert 'never-log' not in str(error.value)
 
 
+def test_long_rate_limit_is_not_shortened_to_one_hour():
+    state = reminder.empty_state()
+    fetcher = lambda now: make_plan(now=now.isoformat())
+    def reject(text):
+        raise reminder.TelegramRejected('sendMessage', 429, 5400)
+    with pytest.raises(reminder.TelegramRejected):
+        reminder.run_tick(state, reminder.utc('2026-11-20T17:45:00Z'), lambda s: None, reject, fetcher)
+    reminder.run_tick(state, reminder.utc('2026-11-20T18:46:00Z'), lambda s: None,
+                      lambda text: pytest.fail('Telegram requested a 90-minute delay'), fetcher)
+    assert state['deliveries'][SEASON+':12']['retry_at'] == '2026-11-20T19:15:00+00:00'
+
+
 def test_permanent_rejection_stays_visible_and_is_not_retried():
     state = reminder.empty_state()
     def reject(text):

@@ -166,7 +166,7 @@ class TelegramRejected(RuntimeError):
             retry_after = int(retry_after)
         except (ValueError, TypeError):
             retry_after = 60
-        self.retry_after = max(1, min(3600, retry_after)) if code == 429 else 0
+        self.retry_after = max(1, retry_after) if code == 429 else 0
         super().__init__(f'Telegram {method} rejected the request (HTTP {code})')
 
 
