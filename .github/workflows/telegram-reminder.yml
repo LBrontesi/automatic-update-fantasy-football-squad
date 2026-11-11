@@ -1,6 +1,10 @@
 name: Telegram formation reminder
 
 on:
+  schedule:
+    # Check cached deadlines every 15 minutes, away from the top of the hour.
+    # An early runner waits briefly for kickoff minus two hours.
+    - cron: '2,17,32,47 * * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -18,7 +22,7 @@ concurrency:
 
 jobs:
   check:
-    if: inputs.mode == 'check'
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'check'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -51,9 +55,9 @@ jobs:
           PY
 
   deliver:
-    if: inputs.mode == 'test' || inputs.mode == 'tick'
+    if: (github.event_name == 'schedule' && vars.TELEGRAM_REMINDERS_ENABLED == 'true') || inputs.mode == 'test' || inputs.mode == 'tick'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 25
     permissions:
       contents: write
     steps:
@@ -69,10 +73,10 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          REMINDER_MODE: ${{ inputs.mode }}
+          REMINDER_MODE: ${{ inputs.mode || 'tick' }}
         run: |
           if [ "$REMINDER_MODE" = 'test' ]; then
             python serie_a_reminder.py test
           else
-            python serie_a_reminder.py tick --persist-git
+            python serie_a_reminder.py tick --persist-git --wait-minutes 20
           fi

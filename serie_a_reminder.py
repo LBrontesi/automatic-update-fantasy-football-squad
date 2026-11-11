@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -256,6 +257,25 @@ def run_tick(state, now, persist, sender, fetcher=fetch_plan):
     return f"Telegram reminder sent for giornata {plan['round']}"
 
 
+def scheduled_tick(state, persist, sender, wait_minutes=0, fetcher=fetch_plan,
+                   clock=lambda: datetime.now(timezone.utc), pause=time.sleep):
+    """An early cloud run may wait briefly for the exact target, then recheck it."""
+    if not 0 <= wait_minutes <= 20:
+        raise ValueError('The maximum wait must be between zero and 20 minutes')
+    result = run_tick(state, clock(), persist, sender, fetcher)
+    plan = state.get('plan')
+    if not plan or plan['key'] in state['deliveries']:
+        return result
+    target = utc(plan['send_at'])
+    remaining = (target-clock()).total_seconds()
+    if not 0 < remaining <= wait_minutes * 60:
+        return result
+    print(f'Waiting on the cloud runner until {target.astimezone(ROME).isoformat()}', flush=True)
+    while (remaining := (target-clock()).total_seconds()) > 0:
+        pause(min(30, remaining))
+    return run_tick(state, clock(), persist, sender, fetcher)
+
+
 def load_credentials():
     from dotenv import load_dotenv
     load_dotenv(LOCAL_ENV)
@@ -296,6 +316,8 @@ def main():
     parser.add_argument('command', choices=['check', 'tick', 'pair', 'test'])
     parser.add_argument('--github', action='store_true', help='Store paired credentials as GitHub secrets')
     parser.add_argument('--persist-git', action='store_true', help='Persist only reminder state to main before sending')
+    parser.add_argument('--wait-minutes', type=int, default=0,
+                        help='Wait up to 20 minutes on an early cloud run for the exact reminder time')
     args = parser.parse_args()
     try:
         if args.command == 'check':
@@ -314,9 +336,9 @@ def main():
                 with (STATE_PATH.with_suffix('.lock')).open('w') as lock:
                     fcntl.flock(lock, fcntl.LOCK_EX)
                     state = load_state()
-                    print(run_tick(state, datetime.now(timezone.utc),
-                                   lambda s: save_state(s, git=args.persist_git),
-                                   lambda text: send_message(token, chat_id, text)))
+                    print(scheduled_tick(state, lambda s: save_state(s, git=args.persist_git),
+                                         lambda text: send_message(token, chat_id, text),
+                                         wait_minutes=args.wait_minutes))
     except (ValueError, RuntimeError, OSError, KeyError, subprocess.CalledProcessError) as exc:
         # Provider/credential errors are sanitized inside telegram_api.
         print(f'Reminder error: {exc}')

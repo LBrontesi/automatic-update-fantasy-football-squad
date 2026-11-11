@@ -19,7 +19,7 @@ Commands:
 
 Telegram does not provide an idempotency key for `sendMessage`. A request timeout or interrupted run leaves a durable `claimed` record, which requires inspection instead of an automatic retry that could duplicate a message. Successful delivery records are retained across runs and keyed by season and giornata. A GitHub concurrency group and a local file lock prevent overlapping checks.
 
-`.github/workflows/telegram-reminder.yml` currently supports manual `check`, `test`, and `tick` runs. **No recurring Telegram schedule is active yet**; bot pairing and the choice of hosting must be completed first. This workflow is separate from the disabled squad-update workflow. The `check` mode runs only reminder tests and a public fixture check.
+`.github/workflows/telegram-reminder.yml` supports manual `check`, `test`, and `tick` runs, plus a cloud check every 15 minutes. Scheduled delivery is enabled only when the repository variable `TELEGRAM_REMINDERS_ENABLED` equals `true`; pair the bot and verify a cloud connection test before setting it. Early cloud runs wait up to 20 minutes for the exact two-hour target, then recheck the calendar before sending. GitHub scheduling can still be delayed, so exact delivery time is not guaranteed. The Mac does not need to remain on. To pause reminders, set the variable to `false` or disable **Telegram formation reminder** in Actions. This workflow is separate from the disabled squad-update workflow. The `check` mode runs only reminder tests and a public fixture check.
 
 ## Historical squad bot
 

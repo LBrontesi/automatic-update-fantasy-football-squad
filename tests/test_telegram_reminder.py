@@ -156,6 +156,27 @@ def test_no_message_after_the_first_match_has_started():
                       lambda text: pytest.fail('Too late to submit a squad'))
 
 
+def test_early_cloud_runner_waits_until_exact_target_without_real_sleep():
+    now = reminder.utc('2026-11-20T17:32:00Z')
+    sent = []
+    def pause(seconds):
+        nonlocal now
+        now += timedelta(seconds=seconds)
+    result = reminder.scheduled_tick(reminder.empty_state(), lambda s: None,
+        lambda text: sent.append(now) or 73, wait_minutes=20,
+        fetcher=lambda when: make_plan(now=when.isoformat()), clock=lambda: now, pause=pause)
+    assert 'sent' in result
+    assert sent == [reminder.utc('2026-11-20T17:45:00Z')]
+
+
+def test_cloud_runner_does_not_wait_for_a_deadline_days_away():
+    reminder.scheduled_tick(reminder.empty_state(), lambda s: None,
+        lambda text: pytest.fail('Sent days before deadline'), wait_minutes=20,
+        fetcher=lambda when: make_plan(now=when.isoformat()),
+        clock=lambda: reminder.utc('2026-11-18T08:00:00Z'),
+        pause=lambda seconds: pytest.fail('Runner tried to wait days'))
+
+
 def test_pairing_requires_exact_code_and_the_users_own_private_chat():
     def update(id=123, kind='private', text='/start expected', sender=123):
         return {'message': {'chat': {'id': id, 'type': kind},
