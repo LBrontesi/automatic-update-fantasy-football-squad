@@ -1,5 +1,28 @@
 # Automatic Squad Update (Fantacalcio)
 
+**The squad-update workflow was disabled on 11 November 2026 after Fantacalcio requested that automatic account access stop. Leave it disabled.** The earlier bot documentation below is retained as historical implementation documentation.
+
+## Telegram formation reminders
+
+`serie_a_reminder.py` reads Lega Serie A's public calendar and its public fixture feed. It resolves the current Serie A season, groups games by numbered giornata, and calculates one reminder two hours before the earliest confirmed kickoff. Simultaneous opening games share one reminder. Later days and postponed catch-up games in a round that has already started cannot trigger another reminder. Unconfirmed times and incomplete or conflicting fixture data are not guessed. The reminder contains links for manually submitting both league lineups; the script never logs into or submits anything to Fantacalcio.
+
+The daily fixture check is cached in `data/telegram_reminder_state.json`. Checks within three hours of kickoff refresh the calendar at least every 30 minutes, and a cached deadline is rechecked before delivery. Times use Europe/Rome, including daylight saving. A scheduler must run `tick` frequently enough to reach the deadline; delayed execution can produce a later reminder, and no reminder is sent after kickoff.
+
+Create a dedicated bot using [Telegram's BotFather](https://t.me/BotFather). Store its token in the ignored, private `telegram.local.env` file as `TELEGRAM_BOT_TOKEN=...`. Send your new bot `/start` followed by the code in the ignored `.telegram-pairing-code` file. Run `python serie_a_reminder.py pair` to pair only the personal chat containing that exact code and send a connection test. Add `--github` to store `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` as repository secrets as well. No token or chat ID is written to the public reminder state or logs.
+
+Commands:
+
+- `python serie_a_reminder.py check`: validate the live public schedule and display the next reminder; needs no Telegram credentials and sends nothing.
+- `python serie_a_reminder.py test`: send one connection test to the paired personal chat.
+- `python serie_a_reminder.py tick`: refresh if needed and send only if due, using local state.
+- `python serie_a_reminder.py tick --persist-git`: persist the delivery reservation to GitHub **before** calling Telegram, then persist the result. Used by the separate reminder workflow.
+
+Telegram does not provide an idempotency key for `sendMessage`. A request timeout or interrupted run leaves a durable `claimed` record, which requires inspection instead of an automatic retry that could duplicate a message. Successful delivery records are retained across runs and keyed by season and giornata. A GitHub concurrency group and a local file lock prevent overlapping checks.
+
+`.github/workflows/telegram-reminder.yml` currently supports manual `check`, `test`, and `tick` runs. **No recurring Telegram schedule is active yet**; bot pairing and the choice of hosting must be completed first. This workflow is separate from the disabled squad-update workflow. The `check` mode runs only reminder tests and a public fixture check.
+
+## Historical squad bot
+
 Selenium bot for Classic leagues on [Fantacalcio](https://leghe.fantacalcio.it). It ranks each league's own players, chooses an allowed formation, fills starters and reserves, and verifies the saved lineup after reloading. GitHub Actions attempts an update every three hours; scheduled runs can be delayed, so submission before a deadline is not guaranteed.
 
 ## How it works

@@ -8,3 +8,6 @@ cron.log
 debug/
 reports/
 .pytest_cache/
+telegram.local.env
+.telegram-pairing-code
+data/telegram_reminder_state.lock

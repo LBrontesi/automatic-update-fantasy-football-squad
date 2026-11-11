@@ -1,0 +1,78 @@
+name: Telegram formation reminder
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'check: test/public calendar only; test: send a connection test; tick: send only if due'
+        type: choice
+        default: check
+        options: [check, test, tick]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-formation-reminder
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: inputs.mode == 'check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install pytest
+      - name: Test reminder logic
+        run: python -m pytest -q tests/test_telegram_reminder.py
+      - name: Check the official public calendar without sending
+        run: |
+          python serie_a_reminder.py check > telegram-plan.json
+          python - <<'PY'
+          import json, os
+          from serie_a_reminder import utc, ROME
+          with open('telegram-plan.json') as handle:
+              plan = json.load(handle)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as handle:
+              handle.write('## Telegram reminder — read-only check\n\n')
+              handle.write('No Telegram message was sent. No Fantacalcio account was accessed.\n\n')
+              if plan:
+                  handle.write(f"Next giornata: **{plan['round']}** ({plan['season']}).\n\n")
+                  handle.write(f"Opening matches: {' / '.join(plan['matches'])}.\n\n")
+                  handle.write(f"Kickoff: **{utc(plan['kickoff']).astimezone(ROME).isoformat()}**.\n\n")
+                  handle.write(f"Reminder due: **{utc(plan['send_at']).astimezone(ROME).isoformat()}**.\n\n")
+              else:
+                  handle.write('No confirmed upcoming round is available yet.\n')
+          PY
+
+  deliver:
+    if: inputs.mode == 'test' || inputs.mode == 'tick'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install configuration dependency
+        run: python -m pip install python-dotenv
+      - name: Send test or check due reminder
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REMINDER_MODE: ${{ inputs.mode }}
+        run: |
+          if [ "$REMINDER_MODE" = 'test' ]; then
+            python serie_a_reminder.py test
+          else
+            python serie_a_reminder.py tick --persist-git
+          fi
