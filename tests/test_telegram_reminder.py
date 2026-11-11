@@ -279,6 +279,32 @@ def test_telegram_429_response_is_recognized_without_exposing_its_url(monkeypatc
     assert 'never-log' not in str(error.value)
 
 
+def test_permanent_rejection_stays_visible_and_is_not_retried():
+    state = reminder.empty_state()
+    def reject(text):
+        raise reminder.TelegramRejected('sendMessage', 403)
+    fetcher = lambda now: make_plan(now=now.isoformat())
+    with pytest.raises(reminder.TelegramRejected):
+        reminder.run_tick(state, reminder.utc('2026-11-20T17:45:00Z'), lambda s: None, reject, fetcher)
+    with pytest.raises(RuntimeError, match='rejected'):
+        reminder.run_tick(state, reminder.utc('2026-11-20T18:00:00Z'), lambda s: None,
+                          lambda text: pytest.fail('A blocked bot was retried'), fetcher)
+
+
+def test_actions_summary_shows_deadline_and_unresolved_delivery(tmp_path, monkeypatch):
+    path = tmp_path / 'summary.md'
+    state = reminder.empty_state()
+    state['plan'] = make_plan()
+    state['deliveries'][SEASON+':12'] = {'status': 'unconfirmed'}
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(path))
+    monkeypatch.setattr(reminder, 'load_state', lambda: state)
+    reminder.write_status_summary(error=True)
+    text = path.read_text()
+    assert 'Run failed' in text
+    assert '18:45:00+01:00' in text
+    assert '1 unresolved delivery' in text
+
+
 def test_temporary_public_calendar_error_is_retried(monkeypatch):
     attempts = []
     def get(request, timeout):
@@ -319,3 +345,32 @@ def test_state_push_survives_an_unrelated_commit_during_the_wait(tmp_path, monke
     saved = json.loads(git(origin, 'show', 'main:data/state.json'))
     assert saved == state
     assert (runner / 'notes.txt').read_text() == 'unrelated code or docs update'
+
+
+def test_conflicting_remote_reservation_cannot_be_overwritten(tmp_path, monkeypatch):
+    def git(cwd, *args):
+        return subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                               *args], cwd=cwd, check=True, capture_output=True, text=True).stdout
+    origin, seed, runner, updater = [tmp_path / name for name in ['origin.git', 'seed', 'runner', 'updater']]
+    git(tmp_path, 'init', '--bare', str(origin))
+    git(tmp_path, 'init', '-b', 'main', str(seed))
+    reminder.save_state(reminder.empty_state(), seed / 'data/state.json')
+    git(seed, 'add', '.')
+    git(seed, 'commit', '-m', 'initial state')
+    git(seed, 'remote', 'add', 'origin', str(origin))
+    git(seed, 'push', '-u', 'origin', 'main')
+    git(origin, 'symbolic-ref', 'HEAD', 'refs/heads/main')
+    git(tmp_path, 'clone', str(origin), str(runner))
+    git(tmp_path, 'clone', str(origin), str(updater))
+    remote = reminder.empty_state()
+    remote['deliveries'][SEASON+':12'] = {'status': 'claimed', 'claimed_at': '2026-11-20T17:45:00Z'}
+    reminder.save_state(remote, updater / 'data/state.json')
+    git(updater, 'add', '.')
+    git(updater, 'commit', '-m', 'reserve delivery')
+    git(updater, 'push')
+    local = reminder.empty_state()
+    local['deliveries'][SEASON+':12'] = {'status': 'claimed', 'claimed_at': '2026-11-20T17:45:01Z'}
+    monkeypatch.setattr(reminder, 'ROOT', runner)
+    with pytest.raises(RuntimeError, match='avoid a duplicate'):
+        reminder.save_state(local, runner / 'data/state.json', git=True)
+    assert json.loads(git(origin, 'show', 'main:data/state.json')) == remote
