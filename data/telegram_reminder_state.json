@@ -1,16 +1,15 @@
 {
-  "checked_at": "2026-11-21T10:19:09.972189+00:00",
+  "checked_at": "2026-11-21T17:40:56.604038+00:00",
   "deliveries": {},
   "plan": {
-    "key": "serie-a::Football_Season::ed7fdc2a3e7b408b942ec177b7b956b5:12",
-    "kickoff": "2026-11-21T14:00:00+00:00",
+    "key": "serie-a::Football_Season::ed7fdc2a3e7b408b942ec177b7b956b5:13",
+    "kickoff": "2026-11-27T19:45:00+00:00",
     "matches": [
-      "Como \u2013 Cagliari",
-      "Lazio \u2013 Lecce"
+      "Venezia \u2013 Bologna"
     ],
-    "round": 12,
+    "round": 13,
     "season": "2026/2027",
-    "send_at": "2026-11-21T12:00:00+00:00",
+    "send_at": "2026-11-27T17:45:00+00:00",
     "source": "https://www.legaseriea.it/serie-a/calendario-risultati"
   },
   "version": 1
