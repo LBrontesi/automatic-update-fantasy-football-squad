@@ -20,6 +20,7 @@ ROME = ZoneInfo('Europe/Rome')
 ROOT = Path(__file__).resolve().parent
 STATE_PATH = ROOT / 'data/telegram_reminder_state.json'
 LOCAL_ENV = ROOT / 'telegram.local.env'
+MAX_WAIT_MINUTES = 300
 CALENDAR_URL = 'https://www.legaseriea.it/serie-a/calendario-risultati'
 SDP_BASE = 'https://api-sdp.legaseriea.it/v1/serie-a/football/seasons/'
 COMPETITION_ID = 'serie-a::Football_Competition::ec93b94f74294dc98ab5bcfd67fc0d88'
@@ -337,21 +338,28 @@ def run_tick(state, now, persist, sender, fetcher=fetch_plan):
 
 def scheduled_tick(state, persist, sender, wait_minutes=0, fetcher=fetch_plan,
                    clock=lambda: datetime.now(timezone.utc), pause=time.sleep):
-    """An early cloud run may wait briefly for the exact target, then recheck it."""
-    if not 0 <= wait_minutes <= 20:
-        raise ValueError('The maximum wait must be between zero and 20 minutes')
-    result = run_tick(state, clock(), persist, sender, fetcher)
-    plan = state.get('plan')
-    if not plan or plan['key'] in state['deliveries']:
-        return result
-    target = utc(plan['send_at'])
-    remaining = (target-clock()).total_seconds()
-    if not 0 < remaining <= wait_minutes * 60:
-        return result
-    print(f'Waiting on the cloud runner until {target.astimezone(ROME).isoformat()}', flush=True)
-    while (remaining := (target-clock()).total_seconds()) > 0:
-        pause(min(30, remaining))
-    return run_tick(state, clock(), persist, sender, fetcher)
+    """Keep an early runner available while rechecking the deadline as it waits."""
+    if not 0 <= wait_minutes <= MAX_WAIT_MINUTES:
+        raise ValueError(f'The maximum wait must be between zero and {MAX_WAIT_MINUTES} minutes')
+    now = clock()
+    wait_until = now + timedelta(minutes=wait_minutes)
+    waiting_for = None
+    while True:
+        result = run_tick(state, now, persist, sender, fetcher)
+        plan = state.get('plan')
+        if not plan or plan['key'] in state['deliveries']:
+            return result
+        target = utc(plan['send_at'])
+        if not now < target <= wait_until:
+            return result
+        if target != waiting_for:
+            print(f'Cloud runner is waiting for {target.astimezone(ROME).isoformat()}', flush=True)
+            waiting_for = target
+        # A long wait must still discover changes to kickoff on the opening day.
+        next_check = min(target, now + timedelta(minutes=30))
+        while (remaining := (next_check - clock()).total_seconds()) > 0:
+            pause(remaining)
+        now = clock()
 
 
 def load_credentials():
@@ -422,7 +430,7 @@ def main():
     parser.add_argument('--github', action='store_true', help='Store paired credentials as GitHub secrets')
     parser.add_argument('--persist-git', action='store_true', help='Persist only reminder state to main before sending')
     parser.add_argument('--wait-minutes', type=int, default=0,
-                        help='Wait up to 20 minutes on an early cloud run for the exact reminder time')
+                        help=f'Wait up to {MAX_WAIT_MINUTES} minutes for an upcoming reminder')
     args = parser.parse_args()
     try:
         if args.command == 'check':

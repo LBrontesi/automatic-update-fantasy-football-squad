@@ -180,6 +180,44 @@ def test_cloud_runner_does_not_wait_for_a_deadline_days_away():
         pause=lambda seconds: pytest.fail('Runner tried to wait days'))
 
 
+def test_sparse_github_runs_still_send_at_the_two_hour_target():
+    # On 21 November the only runner before the 15:00 kickoff started at 11:19.
+    now = reminder.utc('2026-11-21T10:19:00Z')
+    payload = calendar_payload('2026-11-21T14:00:00Z')
+    state = reminder.empty_state()
+    sent = []
+
+    def pause(seconds):
+        nonlocal now
+        now += timedelta(seconds=seconds)
+
+    result = reminder.scheduled_tick(state, lambda _: None,
+        lambda _: sent.append(now) or 73, wait_minutes=300,
+        fetcher=lambda when: make_plan(payload, when.isoformat()), clock=lambda: now, pause=pause)
+    assert 'reminder sent' in result
+    assert sent == [reminder.utc('2026-11-21T12:00:00Z')]
+
+
+def test_waiting_runner_detects_an_earlier_kickoff_before_the_original_target():
+    now = reminder.utc('2026-11-21T10:00:00Z')
+    original = calendar_payload('2026-11-21T16:00:00Z')
+    moved = calendar_payload('2026-11-21T14:00:00Z')
+    sent = []
+
+    def pause(seconds):
+        nonlocal now
+        now += timedelta(seconds=seconds)
+
+    def fetcher(when):
+        calendar = moved if when.hour >= 11 else original
+        return make_plan(calendar, when.isoformat())
+
+    reminder.scheduled_tick(reminder.empty_state(), lambda _: None,
+        lambda _: sent.append(now) or 73, wait_minutes=300,
+        fetcher=fetcher, clock=lambda: now, pause=pause)
+    assert sent == [reminder.utc('2026-11-21T12:00:00Z')]
+
+
 def test_pairing_requires_exact_code_and_the_users_own_private_chat():
     def update(id=123, kind='private', text='/start expected', sender=123):
         return {'message': {'chat': {'id': id, 'type': kind},
