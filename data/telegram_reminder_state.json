@@ -3,8 +3,10 @@
   "deliveries": {
     "serie-a::Football_Season::ed7fdc2a3e7b408b942ec177b7b956b5:13": {
       "claimed_at": "2026-11-27T18:26:17.424913+00:00",
+      "message_id": 8,
       "send_at": "2026-11-27T17:45:00+00:00",
-      "status": "claimed"
+      "sent_at": "2026-11-27T18:26:17.424913+00:00",
+      "status": "sent"
     }
   },
   "plan": {
