@@ -1,6 +1,12 @@
 {
   "checked_at": "2026-11-27T18:26:17.424913+00:00",
-  "deliveries": {},
+  "deliveries": {
+    "serie-a::Football_Season::ed7fdc2a3e7b408b942ec177b7b956b5:13": {
+      "claimed_at": "2026-11-27T18:26:17.424913+00:00",
+      "send_at": "2026-11-27T17:45:00+00:00",
+      "status": "claimed"
+    }
+  },
   "plan": {
     "key": "serie-a::Football_Season::ed7fdc2a3e7b408b942ec177b7b956b5:13",
     "kickoff": "2026-11-27T19:45:00+00:00",
