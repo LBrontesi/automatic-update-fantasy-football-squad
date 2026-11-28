@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-27T18:26:17.424913+00:00",
+  "checked_at": "2026-11-28T01:39:37.571180+00:00",
   "deliveries": {
     "serie-a::Football_Season::ed7fdc2a3e7b408b942ec177b7b956b5:13": {
       "claimed_at": "2026-11-27T18:26:17.424913+00:00",
@@ -10,14 +10,14 @@
     }
   },
   "plan": {
-    "key": "serie-a::Football_Season::ed7fdc2a3e7b408b942ec177b7b956b5:13",
-    "kickoff": "2026-11-27T19:45:00+00:00",
+    "key": "serie-a::Football_Season::ed7fdc2a3e7b408b942ec177b7b956b5:14",
+    "kickoff": "2026-12-04T19:45:00+00:00",
     "matches": [
-      "Venezia \u2013 Bologna"
+      "Bologna \u2013 Roma"
     ],
-    "round": 13,
+    "round": 14,
     "season": "2026/2027",
-    "send_at": "2026-11-27T17:45:00+00:00",
+    "send_at": "2026-12-04T17:45:00+00:00",
     "source": "https://www.legaseriea.it/serie-a/calendario-risultati"
   },
   "version": 1
